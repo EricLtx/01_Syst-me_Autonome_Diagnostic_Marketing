@@ -2,11 +2,9 @@
 """
 run_diagnostic.py — point d'entrée CLI du J1.
 
-Exemple (ton client québécois) :
-    python scripts/run_diagnostic.py \
-        --nom "Climatisation Tremblay" \
-        --url "https://exemple-hvac.ca" \
-        --region "Québec, QC"
+Exemple :
+    python run_diagnostic.py --nom "Climatisation Tremblay" \
+        --url "https://exemple-hvac.ca" --region "Québec, QC"
 
 Sans clé API, la synthèse retombe sur le repli déterministe : ça tourne
 hors-ligne. Avec ANTHROPIC_API_KEY, le mini-audit est rédigé par le LLM.
@@ -18,8 +16,8 @@ import argparse
 import sys
 from pathlib import Path
 
-# Permet de lancer le script sans installer le package (pratique en dev)
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Permet de lancer depuis n'importe quel répertoire sans pip install -e
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from diagnostic.collectors.gbp import GbpCollector
 from diagnostic.collectors.reviews import ReviewsCollector

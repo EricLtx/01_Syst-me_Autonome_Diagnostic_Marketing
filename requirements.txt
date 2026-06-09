@@ -1,5 +1,7 @@
 requests>=2.31
 beautifulsoup4>=4.12
 PyYAML>=6.0
+pydantic>=2.0          # requis pour J2 (vault_schema.py)
+pytest>=8.0            # tests
 # Optionnel — uniquement pour la synthèse rédigée par le LLM :
 # anthropic>=0.40

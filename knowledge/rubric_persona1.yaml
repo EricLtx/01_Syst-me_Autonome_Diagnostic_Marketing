@@ -1,0 +1,50 @@
+# =====================================================================
+# Rubrique de diagnostic — Persona 1 : détaillant / installateur HVAC
+# =====================================================================
+# CECI EST DE LA DONNÉE, PAS DU CODE. Le moteur de scoring est générique.
+# Pour le persona 2 (cabinet d'avocats), tu dupliques ce fichier en
+# rubric_persona2.yaml et tu changes les dimensions/poids/checks.
+# Tu ne touches JAMAIS scoring.py.
+#
+# Poids des dimensions = 100 au total.
+# Chaque "check" : signal observé, opérateur, points si réussi, message de faille.
+# Opérateurs disponibles : is_true | gte | lte | exists
+
+persona: "Détaillant / installateur HVAC (climatisation, chauffage, PAC)"
+seuil_faille: 60          # dimension < 60/100 => signalée comme faille
+
+dimensions:
+
+  site_web:
+    poids: 25
+    checks:
+      - { signal: website.reachable,          op: is_true, points: 20, gap: "Site web inaccessible ou inexistant" }
+      - { signal: website.https,              op: is_true, points: 10, gap: "Pas de HTTPS — signal de confiance manquant" }
+      - { signal: website.has_viewport,       op: is_true, points: 15, gap: "Site non optimisé pour mobile" }
+      - { signal: website.has_meta_description,op: is_true, points: 10, gap: "Métadonnées SEO de base absentes" }
+      - { signal: website.mentions_offre,     op: is_true, points: 25, gap: "L'offre (clim / chauffage / PAC) n'est pas clairement présentée" }
+      - { signal: website.has_contact,        op: is_true, points: 20, gap: "Pas de moyen de contact visible" }
+
+  presence_locale:
+    poids: 25
+    checks:
+      - { signal: gbp.verified,   op: is_true, points: 60, gap: "Fiche Google Business non vérifiée (à confirmer en J3)" }
+      - { signal: gbp.has_photos, op: is_true, points: 40, gap: "Pas de photos sur la fiche locale (à confirmer en J3)" }
+
+  avis:
+    poids: 20
+    checks:
+      - { signal: reviews.count, op: gte, value: 10,  points: 50, gap: "Moins de 10 avis — preuve sociale faible (à confirmer en J3)" }
+      - { signal: reviews.avg,   op: gte, value: 4.0, points: 50, gap: "Note moyenne sous 4,0 (à confirmer en J3)" }
+
+  seo_local:
+    poids: 15
+    checks:
+      - { signal: website.has_title,    op: is_true, points: 40, gap: "Balise <title> absente ou vide" }
+      - { signal: seo.local_keywords,   op: is_true, points: 60, gap: "Pas de mots-clés géolocalisés détectés (à confirmer en J3)" }
+
+  identite_visuelle:
+    poids: 15
+    checks:
+      - { signal: website.has_logo,    op: is_true, points: 50, gap: "Pas de logo clairement identifiable" }
+      - { signal: website.image_count, op: gte, value: 3, points: 50, gap: "Très peu de visuels — identité de marque pauvre" }
