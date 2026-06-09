@@ -5,3 +5,7 @@ __pycache__/
 runs.log
 vault/.obsidian/workspace*
 vault/.trash/
+*.pyo
+*.egg-info/
+dist/
+.pytest_cache/

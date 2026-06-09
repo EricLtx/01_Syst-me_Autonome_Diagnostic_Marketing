@@ -1,0 +1,107 @@
+@startuml architecture_agent_prospection
+' =====================================================================
+' Agent de prospection Kemana — architecture cible
+' Diagramme de composants UML.
+' Rendu : extension "PlantUML" dans VS Code (Alt+D), ou copier-coller
+' sur le serveur public www.plantuml.com/plantuml
+' Ce fichier est aussi un GUIDE DE STRUCTURE : il fait foi sur les acteurs,
+' les services externes, les sorties de chaque phase et les exigences NF.
+' =====================================================================
+title Agent de prospection — couche de decouverte + diagnostic
+
+skinparam componentStyle rectangle
+skinparam shadowing false
+skinparam linetype ortho
+left to right direction
+
+' ----- ACTEUR -----
+actor "Utilisatrice\n(consultante)" as User
+
+' ----- SERVICES EXTERNES (APIs et web) -----
+package "Services externes" {
+  [SERP API\n(Serper / Tavily / Brave)] as SERP
+  [Apollo API\n(donnees LinkedIn sous licence)] as APOLLO
+  [Sites web cibles\n(web public)] as WEB
+  [Anthropic API (Claude)] as LLM
+}
+
+' ----- CERVEAU PARTAGE (la config, en donnees) -----
+package "Cerveau partage  (config = donnees)" {
+  [Rubriques ICP\n(icp1..icp5.yaml)] as ICP
+  [Ton de voix + preuve] as KNOW
+}
+
+' ----- PHASE 1 : DECOUVERTE (nouveau) -----
+package "1. Couche de decouverte  <<nouveau>>" {
+  [DiscoveryCollector\nICP -> requetes SERP] as DISC
+  [PersonEnrichment\n(Apollo)] as PERS
+}
+
+' ----- PHASE 2 : DIAGNOSTIC (existant) -----
+package "2. Pipeline de diagnostic  <<existant>>" {
+  [Collecteurs site\n(deterministes)] as SITE
+  [Couche de signaux] as SIG
+  [Moteur de scoring\n(applique la rubrique)] as SCORE
+  [Synthese + controle qualite] as SYNTH
+}
+
+' ----- PHASE 3 & 4 -----
+component "3. Checkpoint humain\n(validation)" as GATE
+component "4. Liste de sortie\n(format Kemana)" as OUT
+
+' ----- FLUX -----
+User  --> DISC  : choisit un ICP cible
+ICP   --> DISC
+SERP  --> DISC
+DISC  --> PERS  : boites candidates
+APOLLO --> PERS
+PERS  --> SITE  : prospects (boite, URL, contact)
+WEB   --> SITE
+SITE  --> SIG
+SIG   --> SCORE
+ICP   --> SCORE
+SCORE --> SYNTH
+KNOW  --> SYNTH
+LLM   ..> SYNTH : optionnel
+SYNTH --> GATE
+GATE  --> OUT
+User  --> GATE  : valide / elimine
+OUT   --> User  : revue < 30 s / ligne
+
+' ----- SORTIES PAR PHASE -----
+note bottom of DISC
+  **Sortie phase 1a** : boites candidates
+  (nom, URL, ICP)
+end note
+note bottom of PERS
+  **Sortie phase 1b** : + dirigeant / office manager,
+  email (source tracee), URL LinkedIn
+end note
+note bottom of SYNTH
+  **Sortie phase 2** : objet Diagnostic
+  (signaux, scores, failles, signal chaud, accroche)
+end note
+note bottom of GATE
+  **Sortie phase 3** : Statut
+  A valider / Valide / Elimine
+end note
+note bottom of OUT
+  **Sortie finale** : ligne au format Kemana
+  (Nom, Titre, Boite, ICP, Email, Site, Signal chaud, Statut)
+end note
+
+' ----- EXIGENCES NON FONCTIONNELLES -----
+note as NFR
+  == Exigences non fonctionnelles ==
+  * **Conformite** : RGPD (base legale interet legitime, minimisation, opt-out),
+    CASL (QC), nLPD + LCD (CH). LinkedIn via API licenciee Apollo — aucun scraping.
+  * **Tracabilite** : source + date de chaque donnee (audit RGPD).
+  * **Securite** : cles API en variables d'environnement, jamais en dur.
+  * **Robustesse** : collecteurs isoles, echec gracieux (le pipeline ne tombe pas).
+  * **Cout maitrise** : cache idempotent, batching, paliers gratuits, rate limiting.
+  * **Auditabilite** : collecte deterministe strictement separee du raisonnement LLM.
+  * **Extensibilite** : rubrique = donnee (nouvel ICP / marche = nouveau YAML, zero code).
+  * **Gouvernance humaine** : rien ne part sans validation explicite.
+end note
+
+@enduml
