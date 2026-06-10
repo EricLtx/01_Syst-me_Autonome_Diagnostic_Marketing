@@ -1,127 +1,210 @@
-# Module `diagnostic` — J1, le pivot
+# Module `diagnostic` — J1 + J2
 
-Premier jalon de l'écosystème d'agents de prospection. Ce module prend une
-entreprise en entrée et produit un **diagnostic de marque scoré** + un
-**mini-audit lisible**. Il est volontairement autonome : on le valide seul,
-sur le client québécois + 2-3 look-alikes, avant de câbler quoi que ce soit
-autour (sourcing, rédaction, CRM — ce sera J2 à J4).
+Deux livrables regroupés dans ce module :
+
+- **J1 — pipeline diagnostic** : prend une entreprise en entrée, produit un
+  **diagnostic de marque scoré** + un **mini-audit lisible**. Autonome,
+  testable hors-ligne.
+- **J2 — bus vault** : couche de persistance Obsidian. Le pipeline J1 écrit
+  ses résultats dans un vault structuré ; un opérateur humain valide via
+  Obsidian. Audit de marque traçable, versionné, pilotable en lot.
+
+Cible actuelle : persona 1 — installateur / détaillant HVAC, séquence Québec → Suisse.
+
+---
 
 ## Arborescence
 
 ```
-diagnostic/
-├─ README.md                      ← ce fichier
+01_Module_Diagnostic/
 ├─ CLAUDE.md                      ← contexte projet pour Claude Code
+├─ README.md                      ← ce fichier
 ├─ requirements.txt
+├─ SPEC-J2-bus-vault.md           ← spécification du livrable J2
+│
+├─ run_diagnostic.py              ← CLI (mode standard + mode vault)
+├─ init_vault.py                  ← CLI initialisation du vault Obsidian
+│
 ├─ knowledge/
-│  └─ rubric_persona1.yaml        ← LA RUBRIQUE (le jugement métier, en données)
-├─ diagnostic/
-│  ├─ models.py                   ← le contrat de données (Diagnostic, Company, Gap)
+│  └─ rubric_persona1.yaml        ← rubrique métier (jugement en données, pas en code)
+│
+├─ diagnostic/                    ← package principal
+│  ├─ models.py                   ← contrat J1 : Diagnostic, Company, Gap (dataclasses)
 │  ├─ config.py                   ← charge rubrique + base de connaissances
-│  ├─ pipeline.py                 ← orchestre la chaîne entrée → sortie
-│  ├─ scoring.py                  ← moteur générique (applique la rubrique)
-│  ├─ synthesis.py                ← rédaction LLM + contrôle qualité (+ repli)
+│  ├─ pipeline.py                 ← orchestre la chaîne J1 (collecte → score → synthèse)
+│  ├─ scoring.py                  ← moteur de scoring générique (piloté par la rubrique)
+│  ├─ synthesis.py                ← rédaction LLM + contrôle qualité + repli déterministe
+│  ├─ serializers.py              ← Diagnostic → FicheProspect / Rapport Markdown (J2)
+│  ├─ vault_schema.py             ← FicheProspect Pydantic, enums, machine à états (J2)
+│  ├─ vault_io.py                 ← bus controller : seul module à lire/écrire le vault (J2)
+│  ├─ vault_init.py               ← scaffold idempotent du vault Obsidian (J2)
+│  ├─ vault_runner.py             ← orchestrateur mode --out vault (J2)
 │  └─ collectors/
 │     ├─ base.py                  ← interface Collector (enfichable, anti-crash)
-│     ├─ website.py               ← IMPLÉMENTÉ — testable tout de suite
-│     ├─ gbp.py                   ← stub (J2)
-│     ├─ reviews.py               ← stub (J2)
-│     ├─ seo.py                   ← stub (J2)
-│     └─ social.py                ← stub (J2)
-└─ scripts/
-   └─ run_diagnostic.py           ← CLI
+│     ├─ website.py               ← scraping site web (implémenté)
+│     ├─ gbp.py                   ← Google Business Profile (stub — J3)
+│     ├─ reviews.py               ← avis en ligne (stub — J3)
+│     ├─ seo.py                   ← SEO (stub — J3)
+│     └─ social.py                ← réseaux sociaux (stub — J3)
+│
+├─ tests/
+│  ├─ test_j1_smoke.py            ← smoke tests pipeline J1 (6)
+│  ├─ test_vault_schema.py        ← schéma Pydantic, enums, transitions (15)
+│  ├─ test_vault_io.py            ← bus controller : atomicité, journal, query… (30)
+│  ├─ test_vault_init.py          ← scaffold idempotent, dashboard, git… (25)
+│  ├─ test_serializers.py         ← Diagnostic → Fiche / Rapport Markdown (18)
+│  └─ test_integration_vault.py   ← pipeline complet §8.6 (7)
+│
+└─ vault/                         ← créé par init_vault.py (non versionné)
+   ├─ 00-Dashboard.md             ← tableau de bord Dataview (pipeline + gaps + relance)
+   ├─ 10-Prospects/               ← fiches prospect par persona/marché
+   ├─ 20-Rubrics/                 ← copies des rubrics YAML
+   ├─ 30-Diagnostics/             ← rapports générés par le pipeline
+   ├─ 90-Systeme/                 ← memory-map + journal de décisions
+   └─ _templates/                 ← gabarit fiche-prospect.md
 ```
-
-## Installation et test
-
-```bash
-python -m venv .venv && source .venv/bin/activate    # Windows : .venv\Scripts\activate
-pip install -r requirements.txt
-
-python scripts/run_diagnostic.py \
-    --nom "Climatisation Tremblay" \
-    --url "https://exemple-hvac.ca" \
-    --region "Québec, QC"
-```
-
-Sans clé API, la synthèse utilise un **repli déterministe** : ça tourne
-hors-ligne. Pour la rédaction par le LLM, pose `ANTHROPIC_API_KEY` puis
-`pip install anthropic`.
 
 ---
 
-## Construire et étendre ce module avec Claude Code et Claude Cowork
+## Installation
 
-L'objectif n'est pas seulement de livrer du code : c'est de te remettre au
-développement, augmenté par l'IA. La compétence a bougé — elle est désormais
-dans la **direction** et la **revue**, plus dans la frappe ligne à ligne.
+```bash
+python -m venv .venv
+# Windows :
+.venv\Scripts\activate
+# macOS / Linux :
+source .venv/bin/activate
 
-### Claude Code — pour le code (le J1 et au-delà)
+pip install -r requirements.txt
+```
+
+---
+
+## Utilisation
+
+### Mode standard — diagnostic d'une entreprise (J1)
+
+```bash
+# Sortie lisible
+python run_diagnostic.py --nom "Climatisation Tremblay" \
+    --url "https://exemple-hvac.ca" --region "Québec, QC"
+
+# Sortie JSON complète
+python run_diagnostic.py --nom "Climatisation Tremblay" \
+    --url "https://exemple-hvac.ca" --json
+```
+
+Sans `ANTHROPIC_API_KEY`, la synthèse utilise un **repli déterministe** : le
+module fonctionne entièrement hors-ligne.
+
+### Mode vault — traitement en lot (J2)
+
+```bash
+# 1. Initialiser le vault (une seule fois ; idempotent si relancé)
+python init_vault.py
+python init_vault.py --vault chemin/vers/vault    # ou variable $VAULT_PATH
+
+# 2. Créer une fiche manuellement
+#    Copier vault/_templates/fiche-prospect.md dans le bon sous-dossier
+#    Renseigner nom, site_web, marche, persona — laisser statut: decouvert
+
+# 3. Lancer le diagnostic sur toutes les fiches 'decouvert'
+python run_diagnostic.py --out vault
+python run_diagnostic.py --out vault --vault chemin/vers/vault
+```
+
+Le pipeline :
+1. Lit toutes les fiches `statut: decouvert` dans `10-Prospects/`
+2. Exécute le diagnostic J1 sur chacune
+3. Écrit un rapport Markdown dans `30-Diagnostics/`
+4. Met à jour le frontmatter (score, gaps, date, wikilink rapport)
+5. Passe la fiche en `statut: diagnostique`
+6. Journalise chaque opération dans `runs.log`
+
+En cas d'erreur sur une fiche, l'erreur est journalisée et les autres fiches
+continuent d'être traitées.
+
+### Ouvrir le vault dans Obsidian
+
+Pointer Obsidian vers le dossier `vault/` (Open folder as vault). Activer le
+plugin **Dataview** pour que `00-Dashboard.md` affiche les tableaux de bord.
+
+---
+
+## Tests
+
+```bash
+pytest tests/ -v                    # suite complète (101 tests)
+pytest tests/ -v -k "vault"         # seulement les tests vault
+pytest tests/ -v -k "integration"   # test end-to-end §8.6
+```
+
+---
+
+## Architecture en bref
+
+Le système suit le modèle d'un **micro-ordinateur** :
+
+| Rôle | Composant |
+|------|-----------|
+| RAM | `vault/` — notes Markdown + frontmatter YAML |
+| Bus controller | `vault_io.py` — seul module à lire/écrire dans `vault/` |
+| CPU | agents (pipeline J1 aujourd'hui, découverte J3 et outreach J4 à venir) |
+| ROM | rubrics YAML + templates (lecture seule) |
+| Disque | cache de scraping brut, toujours hors du vault |
+| Console | opérateur humain via Obsidian |
+
+**Invariants de sécurité :**
+- Toute écriture dans le vault est atomique (`tmp` + `os.replace()`).
+- Tout appel d'agent passe par `VaultIO` et est journalisé dans `runs.log`.
+- La machine à états (`decouvert → diagnostique → valide → contacte`) est
+  validée à chaque transition. Un agent ne peut que passer `decouvert → diagnostique`.
+
+---
+
+## Prochaine étape (J3)
+
+Agent de découverte : alimentation automatique du vault en fiches `decouvert`
+depuis une source (Apollo, LinkedIn, annuaire sectoriel). Les collecteurs stubs
+(GBP, avis, SEO, social) seront activés avec leurs vraies API.
+
+---
+
+## Construire et étendre ce module avec Claude Code
 
 Claude Code est l'agent de codage en terminal : il lit le dépôt, édite les
-fichiers, exécute les commandes et gère git, sans quitter la ligne de commande.
+fichiers, exécute les commandes et gère git.
 
-**Mise en place (5 min).** Il faut un compte payant (Claude Pro à 20 $/mois
-suffit ; le plan gratuit n'inclut pas Claude Code).
+**Mise en place (5 min) :**
 ```bash
-# Installeur natif (aucun Node requis) :
+# Installeur natif :
 curl -fsSL https://claude.ai/install.sh | bash
-# — ou via npm (nécessite Node.js 18+) :
+# — ou via npm (Node.js 18+) :
 npm install -g @anthropic-ai/claude-code
 
-cd diagnostic     # le dossier de ce module
-claude            # démarre la session
+cd 01_Module_Diagnostic
+claude
 ```
-Si tu préfères une interface graphique, l'app Desktop existe aussi.
 
-**Le réflexe à prendre : `/init`.** Dans une session, `/init` génère (ou met à
-jour) un `CLAUDE.md` — le contexte persistant que Claude Code relit à chaque
-fois. C'est l'étape la plus rentable et la plus souvent zappée. Un `CLAUDE.md`
-est déjà fourni ici : ouvre-le, c'est lui qui garde tes règles d'architecture
-(rubrique = donnée, collecte ≠ LLM, etc.) à portée de l'agent.
+**Le réflexe à prendre : `/init`.** Régénère `CLAUDE.md` avec la structure
+actuelle du projet. Un `CLAUDE.md` est déjà fourni — il garde les règles
+d'architecture à portée de l'agent à chaque session.
 
-**Comment piloter — les trois mouvements du J2 :**
-
-1. *Donner le cap, pas la solution.* Pointe l'architecture, laisse-le proposer :
-   > « Implémente `GbpCollector` dans `collectors/gbp.py` via l'API Google
-   >  Places (Place Details). Respecte le gabarit de `website.py` : cache,
-   >  timeout, échec gracieux. Renvoie `verified`, `has_photos`, `photo_count`.
-   >  Montre-moi ton plan avant de coder. »
-2. *Relire le diff, pas le réécrire.* C'est là qu'est ta valeur de dev : tu
-   challenges, tu corriges la conception, tu valides. Demande-lui de lancer le
-   `run_diagnostic.py` sur une vraie fiche pour vérifier la sortie.
-3. *Capitaliser.* Quand une convention émerge (gestion d'erreurs API, format de
-   cache), demande-lui de l'inscrire dans `CLAUDE.md`. Le projet s'auto-documente.
+**Comment piloter :**
+1. *Donner le cap, pas la solution.* Pointe l'architecture, laisse-le proposer
+   un plan avant de coder.
+2. *Relire le diff, pas le réécrire.* Ta valeur est dans la direction et la revue.
+3. *Capitaliser.* Quand une convention émerge, demande-lui de l'inscrire dans
+   `CLAUDE.md`. Le projet s'auto-documente.
 
 Ton historique C++/VHDL joue ici : la pensée système — pipelines, états,
-contraintes — est exactement ce qu'une architecture d'agents réclame. Python
-et JS reviendront vite ; le reste, c'est de la direction.
-
-### Claude Cowork — pour ce qui n'est pas du code
-
-Cowork est l'app de travail agentique pour les tâches hors-dev. C'est le
-**cockpit de la consultante** sur ce projet :
-
-- **Affûter la rubrique sans coder.** `rubric_persona1.yaml` est du texte
-  lisible : dans Cowork, on peut raisonner « pour un installateur HVAC, les
-  avis pèsent-ils plus que le SEO ? » et ajuster les poids. La logique métier
-  se règle là ; le moteur, lui, ne change pas.
-- **Relire les diagnostics en lot.** Avant l'outreach (J3), c'est l'endroit
-  pour valider que les mini-audits tiennent la route — la gouvernance humaine
-  en bout de chaîne dont on a parlé.
-- **Préparer le persona 2.** Dériver `rubric_persona2.yaml` (cabinet d'avocats)
-  est un travail de réflexion, pas de code : Cowork est taillé pour ça.
-
-La division du travail, en une phrase : **Claude Code touche au code, Cowork
-touche au jugement et au contenu.** Le même socle (la rubrique, le contrat de
-données) sert de pont entre les deux.
+contraintes — est exactement ce qu'une architecture d'agents réclame.
 
 ---
 
-## Conformité et bonnes manières
+## Conformité
 
-Le scraping est volontairement minimal et poli (User-Agent, timeout, cache,
-une requête par cible). Côté prospection à venir (J3+), garde en tête que
-CASL (Québec) et la nLPD + art. 3 LCD (Suisse) encadrent l'email à froid :
-ciblage B2B, identification claire, désinscription. Rien de bloquant, mais à
-câbler dès la rédaction — et à faire valider par un juriste.
+Le scraping est volontairement poli (User-Agent, timeout, cache, une requête
+par cible). Pour l'outreach à venir (J3+), CASL (Québec) et la nLPD + art. 3
+LCD (Suisse) encadrent l'email à froid : ciblage B2B, identification claire,
+désinscription. À faire valider par un juriste avant envoi.
