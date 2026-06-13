@@ -7,7 +7,7 @@
 ## Ce qu'est ce projet
 
 Écosystème d'agents de prospection pour une consultante en marketing / branding.
-Quatre livrables complets :
+Cinq livrables complets :
 
 - **J1 — pipeline diagnostic** : entrée = une entreprise ; sortie = score + mini-audit
   de marque. Cible : persona 1 (installateur HVAC), séquence Québec → Suisse.
@@ -20,6 +20,9 @@ Quatre livrables complets :
 - **J4 — agent découverte** : `run_discovery.py` (SERP → candidates → fiches
   `decouvert`) + enrichissement Apollo (`PersonEnrichment`). ICP = données YAML
   dans `icp/*.yaml`. Zéro LLM, zéro scraping LinkedIn.
+- **J5 — sortie + préflight** : `run_export.py` (fiches `valide` → liste Kemana
+  CSV/JSONL, lecture seule, opt_out absolu), `run_usage.py` (agrégat `api_usage.log`,
+  snapshot vault), `run_preflight.py` (9 contrôles GO/NO-GO, pré-condition cron J7).
 
 ## Architecture (à respecter)
 
@@ -77,6 +80,25 @@ Règles non négociables J3 :
   les signaux bruts dans `SeoCollector` et `SocialCollector` (collecteurs dérivés,
   sans accès réseau propre).
 
+### J5 — Sortie + préflight
+
+Règles non négociables J5 :
+- **Export lecture seule** : `run_export.py` ne fait aucune transition d'état, aucun appel
+  réseau. Seule la lecture du vault est autorisée. Les fiches `opt_out: true` sont exclues
+  sans exception (RGPD/CASL/nLPD).
+- **`signal_chaud` dérivé, pas dans Diagnostic** : calculé dans `serializers.py` depuis
+  `diag.failles` (contrat JSON Diagnostic préservé → test_j1_smoke intact).
+- **Exports hors vault** : dossier `exports/` hors vault, dans `.gitignore`. Écriture
+  refusée si `--out` pointe sous `vault/` (erreur fatale).
+- **Snapshot usage via bus vault** : `run_usage.py --snapshot` écrit dans `90-Systeme/`
+  via `vault_io.write_system_note()` (pas d'open() direct).
+- **Préflight GO/NO-GO** : 9 contrôles, code de sortie 0=GO / 1=NO-GO. Pré-condition du
+  cron J7. Les checks `tests_verts` et warnings clés optionnelles ne bloquent pas.
+- **Garde-fous bus étendus** : AST walk vérifie que les 5 modules J5 (export, usage,
+  preflight, run_export, run_usage) n'importent ni `requests` ni `anthropic` au niveau module.
+- **Config = données** : colonnes Kemana dans `knowledge/export_kemana.yaml`, budgets
+  dans `budgets:` de `api_pricing.yaml`. Modifier = éditer le YAML, pas le code.
+
 ### J4 — Agent de découverte
 
 Règles non négociables J4 :
@@ -103,7 +125,7 @@ Règles non négociables J4 :
 | `gbp.py` | 1 | Google Places `text_search` via api_io | stub `verified=None` |
 | `reviews.py` | 1 | Google Places `text_search` + `place_details` via api_io | stub `count=None` |
 
-### Schéma vault
+### Schéma vault + exports
 
 ```
 vault/
@@ -116,10 +138,15 @@ vault/
 ├─ 30-Diagnostics/              ← rapports générés (un par fiche diagnostiquée)
 ├─ 90-Systeme/
 │  ├─ memory-map.md             ← plan d'adressage (généré, ne pas éditer)
-│  └─ journal-decisions.md      ← log humain des décisions (éditable)
+│  ├─ journal-decisions.md      ← log humain des décisions (éditable)
+│  └─ usage-AAAA-MM-JJ.md      ← snapshots d'usage API (J5, via run_usage --snapshot)
 ├─ _templates/
 │  └─ fiche-prospect.md         ← gabarit de nouvelle fiche
 └─ 00-Dashboard.md              ← 3 requêtes Dataview (pipeline, top gaps, relance)
+
+exports/                        ← HORS vault, dans .gitignore (artefacts J5)
+├─ kemana_tous_AAAA-MM-JJ.csv  ← liste Kemana (utf-8-sig pour Excel FR)
+└─ kemana_tous_AAAA-MM-JJ.anomalies.txt  ← rapport anomalies (email manquant, etc.)
 ```
 
 ## Commandes
@@ -146,6 +173,22 @@ python run_discovery.py --icp persona1-quebec --sans-contact     # SERP uniqueme
 python run_discovery.py --icp persona1-quebec --dry-run          # aperçu, aucune écriture
 python run_discovery.py --icp persona1-quebec --enrichir-existants  # rejeu phase 1b
 
+# Export J5 — couche de sortie Kemana (lecture seule, aucune transition d'état)
+python run_export.py                                  # CSV toutes fiches valide/non opt_out
+python run_export.py --icp persona1-quebec            # filtré par ICP
+python run_export.py --format jsonl                   # JSONL au lieu de CSV
+python run_export.py --dry-run                        # aperçu sans écriture
+
+# Usage J5 — agrégat api_usage.log
+python run_usage.py                                   # rapport console
+python run_usage.py --depuis 2025-01-01               # filtré par date
+python run_usage.py --snapshot                        # rapport + snapshot vault/90-Systeme/
+
+# Préflight J5 — vérification GO / NO-GO (code de sortie 0=GO / 1=NO-GO)
+python run_preflight.py                               # tous les contrôles
+python run_preflight.py --icp persona1-quebec         # + vérification ICP spécifique
+python run_preflight.py --strict                      # tests_verts devient bloquant
+
 # Tests
 pytest tests/ -v
 pytest tests/ -v -k "vault"             # seulement les tests vault
@@ -166,7 +209,7 @@ pytest tests/ -v -k "icp or discovery or enrichment"  # tests J4
 - `failles or []` est faux pour une liste vide — toujours tester `if x is not None`.
 - Pas de `seuil_faille` dans les rubriques : un gap par check échoué, plus fin.
 
-## État des tests (≥ 255 au total — J1 à J4)
+## État des tests (365 au total — J1 à J5)
 
 | Fichier | Couverture | Nb |
 |---------|-----------|-----|
@@ -183,19 +226,27 @@ pytest tests/ -v -k "icp or discovery or enrichment"  # tests J4
 | `test_discovery.py` | §7.2-4 + §7.7 DiscoveryCollector (SERP, filtres, dédup) | ~30 |
 | `test_enrichment.py` | §7.6 + §7.8 PersonEnrichment + Contact minimisation | ~20 |
 | `test_discovery_vault.py` | §7.5, §7.9-11 dédup inter-runs, dry-run, fiche decouvert | ~20 |
+| `test_j5_phase0.py` | §13 signal_chaud/accroche, contrat JSON Diagnostic, api_pricing | 20 |
+| `test_export.py` | Tests 1-6 : sélection, mapping Kemana, anomalies, garde-fous | 22 |
+| `test_usage.py` | Tests 7-8 : agrégation ledger, taux cache, write_system_note | 20 |
+| `test_preflight.py` | Tests 9-12, 14 : GO/NO-GO, warn, garde-fous AST, régression | 27 |
 
-## Prochaines tâches (J4 paramétrage + J5)
+## Prochaines tâches — Paramétrage réel (Phase D / Cowork)
 
-### Paramétrage J4 (Cowork — pas de code à écrire)
-- Renseigner `SERP_API_KEY` et `APOLLO_API_KEY` dans l'environnement.
-- Renseigner les vrais tarifs dans `knowledge/api_pricing.yaml` (D1).
-- Définir les budgets SERP et Apollo dans `ApiIO` (D2).
-- Tester un premier run réel : `python run_discovery.py --icp persona1-quebec --dry-run`.
+### Paramétrage J4 + J5 (opératrice / Cowork — pas de code à écrire)
+1. Renseigner `SERP_API_KEY` et `APOLLO_API_KEY` dans l'environnement.
+2. Relever les vrais tarifs et les saisir dans `knowledge/api_pricing.yaml` :
+   - `releve_le: AAAA-MM-JJ` (date du relevé)
+   - `prix_par_unite` de serp et apollo (non-zéro)
+3. Configurer les budgets de garde-fou dans `api_pricing.yaml` :
+   - `budgets.serp.unites_max.requetes` (ex. 500 pour un pilote borné)
+   - `budgets.apollo.unites_max.credits` (ex. 50 pour un pilote borné)
+4. Lancer `python run_preflight.py` → vérifier GO avant tout run réel.
+5. Premier run découverte : `python run_discovery.py --icp persona1-quebec --dry-run`.
 
-### J5 — Outreach (prochaine session)
-- Exporter les fiches `valide` avec `opt_out=False` vers CSV/CRM.
+### J6 — Outreach (session suivante)
 - Séquence d'emails déclenchée depuis le vault (statut `valide → contacte`).
+- Faire valider par un juriste le cadre CASL (QC) / nLPD + art. 3 LCD (CH) / RGPD (FR)
+  **avant tout envoi**.
 - `rubric_persona2.yaml` (second persona).
-- Brancher `derniere_maj`, `repond_aux_avis`, `seo.local_keywords` dans la rubrique.
-- Tableau de bord usage `api_usage.log` (D2).
-- Orchestrateur cron (traitement batch planifié).
+- Orchestrateur cron (traitement batch planifié) — préflight en pré-condition.

@@ -9,3 +9,6 @@ vault/.trash/
 *.egg-info/
 dist/
 .pytest_cache/
+
+# Exports Kemana — artefacts de sortie J5, jamais versionnés (même esprit que G9)
+exports/

@@ -172,6 +172,8 @@ def _memory_map_md() -> str:
 | `contact_linkedin` | `str \\| null` | URL | **agent J4** | Référence LinkedIn (jamais scrapée) |
 | `icp_id` | `str \\| null` | ex. `persona1-quebec` | **agent J4** | ICP ayant découvert cette cible |
 | `opt_out` | `bool` | `true` / `false` | humain | Si `true` : exclu de tout export/outreach |
+| `signal_chaud` | `str \\| null` | — | **agent J5** | Preuve de la faille la plus impactante (accroche CRM) |
+| `accroche` | `str \\| null` | — | **agent J5** | Phrase d'outreach générée par synthesis.py |
 
 > **Annotations libres** : tout champ non listé ci-dessus est toléré et préservé
 > en round-trip (`extra = "allow"`). Exemples : `note_humaine`, `priorite`, `relance_prevue`.

@@ -25,10 +25,18 @@ def diagnostic_to_fiche(diag: Diagnostic, fiche: FicheProspect) -> FicheProspect
     # Dédupliquer les dimensions sans perdre l'ordre d'importance
     gaps: list[str] = list(dict.fromkeys(g.dimension for g in diag.failles))
 
+    # Dériver signal_chaud depuis les failles (préserve le contrat JSON de Diagnostic)
+    hautes = [g for g in diag.failles if g.gravite == "haute"]
+    signal_chaud = (hautes[0].preuve if hautes else
+                    diag.failles[0].preuve if diag.failles else
+                    diag.accroche) or None
+
     return fiche.model_copy(update={
         "score_global": score,
         "gaps_majeurs": gaps,
         "date_diagnostic": date.today(),
+        "signal_chaud": signal_chaud,
+        "accroche": diag.accroche or None,
     })
 
 

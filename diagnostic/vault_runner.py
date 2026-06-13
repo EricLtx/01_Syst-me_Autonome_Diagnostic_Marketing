@@ -84,6 +84,8 @@ def run_vault_mode(
                 gaps_majeurs=fiche_maj.gaps_majeurs,
                 date_diagnostic=fiche_maj.date_diagnostic,
                 rapport=wikilink,
+                signal_chaud=fiche_maj.signal_chaud,
+                accroche=fiche_maj.accroche,
             )
 
             # Transition d'état (journalisée dans vault_io.transition)

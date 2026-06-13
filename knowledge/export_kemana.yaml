@@ -1,0 +1,18 @@
+# knowledge/export_kemana.yaml — schéma de la liste de sortie Kemana.
+# Config = données : ajouter/réordonner une colonne = éditer ce fichier, pas le code.
+# Tous les `champ` doivent exister dans FicheProspect (vérifié à l'import et en préflight).
+# Encodage utf-8-sig (BOM) pour ouverture directe dans Excel FR sans reconfiguration.
+
+colonnes:
+  - { entete: "Nom",          champ: contact_nom          }
+  - { entete: "Titre",        champ: contact_titre         }
+  - { entete: "Boîte",        champ: nom                   }
+  - { entete: "ICP",          champ: icp_id                }
+  - { entete: "Email",        champ: contact_email         }
+  - { entete: "Source email", champ: contact_email_source  }
+  - { entete: "Site",         champ: site_web              }
+  - { entete: "Score",        champ: score_global          }
+  - { entete: "Signal chaud", champ: signal_chaud          }
+  - { entete: "Statut",       champ: statut                }
+
+encodage: utf-8-sig

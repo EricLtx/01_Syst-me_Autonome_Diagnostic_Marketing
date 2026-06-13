@@ -1,6 +1,6 @@
-# Module `diagnostic` — J1 + J2
+# Module `diagnostic` — J1 à J5
 
-Deux livrables regroupés dans ce module :
+Cinq livrables regroupés dans ce module :
 
 - **J1 — pipeline diagnostic** : prend une entreprise en entrée, produit un
   **diagnostic de marque scoré** + un **mini-audit lisible**. Autonome,
@@ -8,6 +8,13 @@ Deux livrables regroupés dans ce module :
 - **J2 — bus vault** : couche de persistance Obsidian. Le pipeline J1 écrit
   ses résultats dans un vault structuré ; un opérateur humain valide via
   Obsidian. Audit de marque traçable, versionné, pilotable en lot.
+- **J3 — bus I/O + collecteurs réels** : `api_io.py` orchestre tous les appels
+  externes (cache, budget, journal). Collecteurs Google Places, SEO, social.
+- **J4 — agent découverte** : `run_discovery.py` (SERP → candidates → fiches
+  `decouvert`) + enrichissement Apollo. ICP = données YAML dans `icp/`.
+- **J5 — sortie + préflight** : `run_export.py` (fiches `valide` → liste Kemana
+  CSV/JSONL, opt_out absolu), `run_usage.py` (agrégat usage API), `run_preflight.py`
+  (9 contrôles GO/NO-GO, code de sortie 0/1).
 
 Cible actuelle : persona 1 — installateur / détaillant HVAC, séquence Québec → Suisse.
 
@@ -134,9 +141,10 @@ plugin **Dataview** pour que `00-Dashboard.md` affiche les tableaux de bord.
 ## Tests
 
 ```bash
-pytest tests/ -v                    # suite complète (101 tests)
+pytest tests/ -v                    # suite complète (365 tests — J1 à J5)
 pytest tests/ -v -k "vault"         # seulement les tests vault
 pytest tests/ -v -k "integration"   # test end-to-end §8.6
+pytest tests/ -v -k "export or usage or preflight"  # tests J5 uniquement
 ```
 
 ---
@@ -162,11 +170,17 @@ Le système suit le modèle d'un **micro-ordinateur** :
 
 ---
 
-## Prochaine étape (J3)
+## Prochaine étape — Paramétrage réel (Phase D / Cowork)
 
-Agent de découverte : alimentation automatique du vault en fiches `decouvert`
-depuis une source (Apollo, LinkedIn, annuaire sectoriel). Les collecteurs stubs
-(GBP, avis, SEO, social) seront activés avec leurs vraies API.
+Avant le premier run réel, l'opératrice doit :
+1. Renseigner `SERP_API_KEY` et `APOLLO_API_KEY` dans l'environnement.
+2. Saisir les vrais tarifs + `releve_le` dans `knowledge/api_pricing.yaml`.
+3. Configurer `budgets.serp` et `budgets.apollo` dans `api_pricing.yaml`.
+4. Lancer `python run_preflight.py` → vérifier GO.
+5. Tester : `python run_discovery.py --icp persona1-quebec --dry-run`.
+
+**J6 — Outreach** (session suivante) : séquence d'emails, validation juridique
+CASL / nLPD / RGPD obligatoire avant tout envoi.
 
 ---
 

@@ -14,6 +14,7 @@
 # Fournisseurs reconnus par api_io.py : anthropic, serp, google_places, apollo, http
 
 devise: USD
+releve_le: null   # AAAA-MM-JJ — À RENSEIGNER après le relevé des vrais tarifs (Phase D)
 
 fournisseurs:
 
@@ -63,3 +64,17 @@ fournisseurs:
     unite: requete
     endpoints:
       get: { prix_par_unite: { requetes: 0.0 } }
+
+# ---------------------------------------------------------------------------
+# Budgets de garde-fou — lus par preflight.py et ApiIO (§7.2 de SPEC-J5).
+# Valeurs 0 = non configuré → préflight bloquant.
+# À renseigner avant le premier run réel (Phase D / opératrice Cowork).
+# Format : même structure que le paramètre `budgets` de ApiIO.__init__().
+# ---------------------------------------------------------------------------
+budgets:
+  serp:
+    unites_max:
+      requetes: 0          # À RENSEIGNER — ex. 500 pour un pilote borné
+  apollo:
+    unites_max:
+      credits: 0           # À RENSEIGNER — ex. 50 pour un pilote borné

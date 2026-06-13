@@ -274,6 +274,13 @@ class VaultIO:
         """
         self._journal(agent, "erreur_pipeline", fiche, "erreur", detail)
 
+    def write_system_note(self, filename: str, content: str) -> Path:
+        """Écrit une note système dans vault/90-Systeme/. Atomique, journalisée."""
+        path = self.vault / "90-Systeme" / filename
+        self._atomic_write(path, content)
+        self._journal("vault_io", "write_system_note", filename, "ok")
+        return path
+
     def exists(
         self,
         *,

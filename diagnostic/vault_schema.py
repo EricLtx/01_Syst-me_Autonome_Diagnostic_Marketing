@@ -105,3 +105,7 @@ class FicheProspect(BaseModel):
     contact_linkedin: str | None = None      # référence uniquement, jamais scrapée
     icp_id: str | None = None
     opt_out: bool = False                    # si True : exclu de tout export/outreach (J5/J6)
+
+    # Champs ajoutés en J5 (sortie — dérivés dans serializers.py, pas dans Diagnostic)
+    signal_chaud: str | None = None   # preuve de la faille la plus impactante (accroche CRM)
+    accroche: str | None = None       # phrase d'outreach générée par synthesis.py
