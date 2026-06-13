@@ -165,6 +165,13 @@ def _memory_map_md() -> str:
 | `source_decouverte` | `str` | `manuel`, `apollo`… | humain | Origine de la cible |
 | `date_diagnostic` | `date \\| null` | `AAAA-MM-JJ` | **agent** | Date du dernier diagnostic automatique |
 | `rapport` | `str \\| null` | wikilink | **agent** | `[[30-Diagnostics/nom-entreprise]]` |
+| `contact_nom` | `str \\| null` | — | **agent J4** | Nom complet du contact (Apollo) |
+| `contact_titre` | `str \\| null` | — | **agent J4** | Titre/fonction du contact |
+| `contact_email` | `str \\| null` | email | **agent J4** | Email professionnel (Apollo licencié) |
+| `contact_email_source` | `str \\| null` | `verified`… | **agent J4** | Statut Apollo — audit RGPD |
+| `contact_linkedin` | `str \\| null` | URL | **agent J4** | Référence LinkedIn (jamais scrapée) |
+| `icp_id` | `str \\| null` | ex. `persona1-quebec` | **agent J4** | ICP ayant découvert cette cible |
+| `opt_out` | `bool` | `true` / `false` | humain | Si `true` : exclu de tout export/outreach |
 
 > **Annotations libres** : tout champ non listé ci-dessus est toléré et préservé
 > en round-trip (`extra = "allow"`). Exemples : `note_humaine`, `priorite`, `relance_prevue`.

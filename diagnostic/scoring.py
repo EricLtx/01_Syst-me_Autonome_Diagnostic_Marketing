@@ -49,7 +49,6 @@ def _severity(points: int, max_points: int) -> str:
 class ScoringEngine:
     def __init__(self, rubrique: dict[str, Any]):
         self.rubrique = rubrique
-        self.seuil_faille = rubrique.get("seuil_faille", 60)
 
     def score(self, signaux: dict[str, Any]) -> tuple[dict[str, float], list[Gap]]:
         scores: dict[str, float] = {}

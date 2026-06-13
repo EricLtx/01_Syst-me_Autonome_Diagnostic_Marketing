@@ -134,4 +134,4 @@ def test_load_rubrique_charge_persona1():
     rubrique = load_rubrique(persona=1)
     assert "dimensions" in rubrique
     assert "site_web" in rubrique["dimensions"]
-    assert rubrique["seuil_faille"] == 60
+    assert "seuil_faille" not in rubrique  # supprimé : un gap par check échoué, pas de seuil par dimension

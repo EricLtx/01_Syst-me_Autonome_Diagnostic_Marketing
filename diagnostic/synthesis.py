@@ -29,11 +29,12 @@ def synthesize(
     scores: dict[str, float],
     gaps: list[Gap],
     knowledge: dict[str, Any] | None = None,
+    api_io=None,
 ) -> tuple[str, str]:
     """Retourne (accroche, mini_audit)."""
     if os.getenv("ANTHROPIC_API_KEY"):
         try:
-            accroche, audit = _synthese_llm(company, scores, gaps, knowledge or {})
+            accroche, audit = _synthese_llm(company, scores, gaps, knowledge or {}, api_io=api_io)
             ok, _ = quality_check(audit, gaps, company)
             if ok:
                 return accroche, audit
@@ -80,7 +81,8 @@ def _synthese_repli(company: Company, scores: dict[str, float], gaps: list[Gap])
 
 
 def _synthese_llm(
-    company: Company, scores: dict[str, float], gaps: list[Gap], knowledge: dict[str, Any]
+    company: Company, scores: dict[str, float], gaps: list[Gap], knowledge: dict[str, Any],
+    api_io=None,
 ) -> tuple[str, str]:
     """Rédaction par le LLM, strictement ancrée dans les failles fournies."""
     import anthropic  # import paresseux : pas de dépendance dure
@@ -101,9 +103,22 @@ def _synthese_llm(
     )
 
     client = anthropic.Anthropic()
-    msg = client.messages.create(
+    fn = lambda: client.messages.create(
         model=MODELE, max_tokens=600, messages=[{"role": "user", "content": prompt}]
     )
+
+    if api_io is not None:
+        # Via bus : tokens comptabilisés dans api_usage.log
+        def _mesure(r):
+            u = r.usage
+            return {
+                "input_tokens":  float(getattr(u, "input_tokens",  0) or 0),
+                "output_tokens": float(getattr(u, "output_tokens", 0) or 0),
+            }
+        msg = api_io.call("anthropic", "messages", fn, fiche=company.nom, measure=_mesure)
+    else:
+        msg = fn()
+
     texte = "".join(b.text for b in msg.content if getattr(b, "type", "") == "text")
     accroche, audit = _split_sortie(texte, gaps)
     return accroche, audit

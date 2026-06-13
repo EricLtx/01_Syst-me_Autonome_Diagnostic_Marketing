@@ -24,22 +24,36 @@ class DiagnosticPipeline:
         collectors: list[Collector],
         rubrique: dict[str, Any],
         knowledge: dict[str, Any] | None = None,
+        api_io=None,
     ):
         self.collectors = collectors
         self.engine = ScoringEngine(rubrique)
         self.knowledge = knowledge or {}
+        self._api_io = api_io
+        # Injecter api_io dans les collecteurs qui le supportent
+        if api_io is not None:
+            for c in self.collectors:
+                if hasattr(c, "_api_io"):
+                    c._api_io = api_io
 
     def run(self, company: Company) -> Diagnostic:
         # 1) Collecte (chaque sonde échoue de son côté, jamais le pipeline)
         signaux: dict[str, Any] = {}
         for c in self.collectors:
-            signaux[c.name] = c.safe_collect(company)
+            result = c.safe_collect(company)
+            signaux[c.name] = result
+            # Après website : propager les signaux bruts aux collecteurs dépendants
+            # (SeoCollector et SocialCollector n'ont pas accès au réseau directement)
+            if c.name == "website":
+                for other in self.collectors:
+                    if hasattr(other, "_website_signals"):
+                        other._website_signals = result
 
         # 2) Scoring (applique la rubrique)
         scores, failles = self.engine.score(signaux)
 
         # 3) Synthèse + QA (rédige le mini-audit et l'accroche)
-        accroche, mini_audit = synthesize(company, signaux, scores, failles, self.knowledge)
+        accroche, mini_audit = synthesize(company, signaux, scores, failles, self.knowledge, api_io=self._api_io)
 
         # 4) Sortie : l'objet Diagnostic complet
         return Diagnostic(

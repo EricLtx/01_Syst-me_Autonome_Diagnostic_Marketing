@@ -193,9 +193,9 @@ class TestIntegrationVault:
         for _, fiche in io.query(statut="diagnostique"):
             assert fiche.rapport is not None
 
-    def test_fiche_sans_url_reste_decouvert_avec_erreur_journal(self, tmp_path):
-        """Une fiche sans URL : le pipeline tourne (site inaccessible) mais
-        elle peut quand même passer à diagnostique avec un score nul."""
+    def test_fiche_sans_url_passe_diagnostique_score_nul(self, tmp_path):
+        """Une fiche sans URL passe quand même à diagnostique avec un score nul.
+        WebsiteCollector retourne reachable=False ; le pipeline ne lève pas."""
         vault = tmp_path / "vault"
         init_vault(vault)
         io = VaultIO(vault)

@@ -1,0 +1,46 @@
+# icp/persona1-quebec.yaml — DONNÉE, pas du code.
+# Un nouvel ICP = un nouveau fichier YAML, zéro changement de code.
+# Validé à la lecture par diagnostic/icp_schema.py (IcpConfig).
+
+icp_id: persona1-quebec
+persona: 1
+marche: quebec
+description: "Détaillant / installateur HVAC (climatisation, chauffage, thermopompe) — Québec"
+
+requetes:
+  gabarits:
+    - "installateur thermopompe {localite}"
+    - "entreprise climatisation chauffage {localite}"
+    - "chauffagiste {localite}"
+  localites:
+    - "Québec"
+    - "Lévis"
+    - "Trois-Rivières"
+    - "Sherbrooke"
+    - "Laval"
+    - "Longueuil"
+  max_resultats_par_requete: 10
+
+filtres:
+  domaines_exclus:
+    - "pagesjaunes.ca"
+    - "yelp."
+    - "facebook.com"
+    - "linkedin.com"
+    - "411.ca"
+    - "houzz."
+    - "kijiji.ca"
+    - "groupon."
+  exiger_domaine_propre: true
+
+enrichissement:
+  titres_cibles:
+    - "propriétaire"
+    - "président"
+    - "directeur général"
+    - "directeur"
+    - "office manager"
+    - "owner"
+    - "president"
+    - "general manager"
+  max_enrichissements: 25

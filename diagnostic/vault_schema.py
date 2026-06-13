@@ -96,3 +96,12 @@ class FicheProspect(BaseModel):
     source_decouverte: str = "manuel"
     date_diagnostic: date | None = None
     rapport: str | None = None  # wikilink [[30-Diagnostics/...]]
+
+    # Champs ajoutés en J4 (tous optionnels — rétro-compatibles avec les fiches antérieures)
+    contact_nom: str | None = None
+    contact_titre: str | None = None
+    contact_email: str | None = None
+    contact_email_source: str | None = None  # statut Apollo ("verified", "guessed"…) — audit RGPD
+    contact_linkedin: str | None = None      # référence uniquement, jamais scrapée
+    icp_id: str | None = None
+    opt_out: bool = False                    # si True : exclu de tout export/outreach (J5/J6)

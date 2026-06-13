@@ -1,0 +1,65 @@
+# knowledge/api_pricing.yaml — DONNÉE, pas du code.
+# Grille tarifaire du bus d'I/O (api_io.py). Config = données : changer un tarif
+# ici ne touche pas au contrôleur.
+#
+# IMPORTANT — Placeholders : toutes les valeurs sont à 0.0.
+# Renseigner les vrais tarifs depuis les pages officielles au moment de la mise
+# en service (délégué D1 dans SPEC-J3). Noter la date de relevé dans chaque
+# commentaire. Devise pivot : USD.
+#
+# Structure par fournisseur :
+#   unite       : unité de facturation ("token", "requete", "credit")
+#   endpoints.X.prix_par_unite : dict {unité: prix_unitaire_USD}
+#
+# Fournisseurs reconnus par api_io.py : anthropic, serp, google_places, apollo, http
+
+devise: USD
+
+fournisseurs:
+
+  anthropic:
+    # Facturation au token, entrée et sortie séparés.
+    # L'objet message.usage expose input_tokens / output_tokens
+    # (+ cache_creation_input_tokens / cache_read_input_tokens si prompt caching activé).
+    # Tarifs : https://www.anthropic.com/pricing  — À RENSEIGNER (date : __)
+    unite: token
+    endpoints:
+      messages:
+        prix_par_unite:
+          input_tokens:                   0.0   # USD / token
+          output_tokens:                  0.0   # USD / token
+          cache_read_input_tokens:        0.0   # USD / token (optionnel)
+          cache_creation_input_tokens:    0.0   # USD / token (optionnel)
+
+  serp:
+    # Facturation à la requête (crédit/recherche).
+    # Fournisseur SERP managé (ex. SerpAPI, Bright Data) — À CHOISIR et RENSEIGNER.
+    # Tarifs : page officielle du fournisseur retenu — À RENSEIGNER (date : __)
+    unite: requete
+    endpoints:
+      search:   { prix_par_unite: { requetes: 0.0 } }
+      maps:     { prix_par_unite: { requetes: 0.0 } }
+      reviews:  { prix_par_unite: { requetes: 0.0 } }
+
+  google_places:
+    # Facturation à la requête ; le prix dépend du SKU (endpoint).
+    # Tarifs : https://developers.google.com/maps/billing  — À RENSEIGNER (date : __)
+    unite: requete
+    endpoints:
+      text_search:    { prix_par_unite: { requetes: 0.0 } }
+      place_details:  { prix_par_unite: { requetes: 0.0 } }
+      nearby_search:  { prix_par_unite: { requetes: 0.0 } }
+
+  apollo:
+    # Facturation au crédit (par enrichissement / enregistrement exporté).
+    # Tarifs : https://www.apollo.io/pricing  — À RENSEIGNER (date : __)
+    unite: credit
+    endpoints:
+      people_enrichment:   { prix_par_unite: { credits: 0.0 } }
+      organization_search: { prix_par_unite: { credits: 0.0 } }
+
+  http:
+    # Fetch statique (palier 0). Coût réseau ~nul ; on journalise le volume.
+    unite: requete
+    endpoints:
+      get: { prix_par_unite: { requetes: 0.0 } }
