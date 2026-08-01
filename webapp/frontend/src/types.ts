@@ -95,6 +95,95 @@ export interface Usage {
   top_fiches: UsageTopFiche[];
 }
 
+// 9. GET /api/greenit — observabilité d'efficience (coût / énergie / CO2e).
+// ⚠️ energie_wh et co2e_g sont des ESTIMATIONS issues des facteurs
+// paramétrables de knowledge/greenit.yaml, jamais des mesures certifiées.
+// Le backend le déclare lui-même via `estimation` / `note_estimation`.
+export interface GreenitParModele {
+  modele: string;
+  nb_appels: number;
+  tokens: number;
+  cout: number;
+  energie_wh: number;
+  co2e_g: number;
+  octets: number;
+  duree_ms: number;
+}
+
+export interface GreenitParFournisseur {
+  fournisseur: string;
+  nb_appels: number;
+  tokens: number;
+  cout: number;
+  energie_wh: number;
+  co2e_g: number;
+  octets: number;
+  duree_ms: number;
+}
+
+export interface GreenitEconomies {
+  appels_evites: number;
+  cout_evite_usd: number;
+  energie_wh_evitee: number;
+  co2e_evite_g: number;
+  methode: string;
+}
+
+export interface Greenit {
+  cout_total_usd: number;
+  devise: string;
+  energie_wh_total: number;
+  co2e_g_total: number;
+  octets_total: number;
+  duree_ms_totale: number;
+  nb_appels: number;
+  nb_cache_hits: number;
+  nb_erreurs: number;
+  nb_lignes_illisibles: number;
+  taux_cache: number;
+  economies: GreenitEconomies;
+  par_modele: GreenitParModele[];
+  par_fournisseur: GreenitParFournisseur[];
+  estimation: boolean;
+  note_estimation: string;
+  source_facteurs: string;
+  couverture_greenit: number;
+  ledger_present: boolean;
+  ledger_path: string;
+}
+
+// 10. GET /api/greenit/stream (SSE) — un événement `appel` par ligne de ledger.
+export interface GreenitAppel {
+  ts: string | null;
+  fournisseur: string;
+  endpoint: string;
+  unites: Record<string, number>;
+  tokens: number;
+  cout_estime: number;
+  devise: string;
+  fiche: string | null;
+  cache_hit: boolean;
+  resultat: string;
+  detail: string;
+  modele: string | null;
+  profil: string | null;
+  octets_entrants: number;
+  octets_sortants: number;
+  octets: number;
+  duree_ms: number;
+  energie_wh: number;
+  co2e_g: number;
+  greenit_instrumente: boolean;
+}
+
+// État de la liaison temps réel, affiché tel quel dans l'écran GreenIT.
+export type EtatFlux =
+  | "connexion"
+  | "connecte"
+  | "polling"
+  | "deconnecte"
+  | "termine";
+
 // 7. GET /api/icp
 export interface Icp {
   icp_id: string;

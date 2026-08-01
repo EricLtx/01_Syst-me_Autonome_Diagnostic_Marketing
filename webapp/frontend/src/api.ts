@@ -3,7 +3,10 @@
 // backend. Sinon, fetch vers /api (proxifié par Vite vers localhost:8000).
 
 import type {
+  EtatFlux,
   Funnel,
+  Greenit,
+  GreenitAppel,
   Health,
   Icp,
   Preflight,
@@ -14,8 +17,12 @@ import type {
   Usage,
 } from "./types";
 
+import { parseAppel } from "./lib/greenit";
+
 import {
   mockFunnel,
+  mockGreenit,
+  mockGreenitAppels,
   mockHealth,
   mockIcps,
   mockPreflight,
@@ -114,4 +121,133 @@ export const api = {
     if (USE_MOCKS) return delay(mockRuns.slice(0, limit));
     return get<RunEntry[]>(`/runs${queryString({ limit })}`);
   },
+
+  async greenit(depuis?: string): Promise<Greenit> {
+    if (USE_MOCKS) return delay(mockGreenit);
+    return get<Greenit>(`/greenit${queryString({ depuis })}`);
+  },
 };
+
+// ---------------------------------------------------------------------------
+// Flux temps réel GreenIT (SSE) — avec repli en polling
+// ---------------------------------------------------------------------------
+// Trois régimes, choisis dans cet ordre :
+//   1. MOCK          → rejeu périodique des fixtures, aucune connexion.
+//   2. SSE           → EventSource sur /api/greenit/stream (temps réel réel).
+//   3. POLLING       → si EventSource est indisponible (vieux navigateur, jsdom)
+//                      ou si la connexion échoue : on interroge /api/greenit à
+//                      intervalle fixe. L'écran l'annonce, il ne fait pas
+//                      semblant d'être « en direct ».
+
+export interface OptionsFluxGreenit {
+  onAppel: (appel: GreenitAppel) => void;
+  onEtat: (etat: EtatFlux) => void;
+  /** Appelé par le repli polling avec un agrégat frais. */
+  onAgregat?: (agregat: Greenit) => void;
+  /** Nombre d'appels déjà journalisés à rejouer à l'ouverture. */
+  historique?: number;
+  /** Période du repli polling, en ms. */
+  periodePollingMs?: number;
+}
+
+export interface AbonnementGreenit {
+  fermer: () => void;
+}
+
+const MOCK_PERIODE_MS = 2500;
+const MOCK_DELAI_INITIAL_MS = 1200;
+
+export function souscrireGreenit(opts: OptionsFluxGreenit): AbonnementGreenit {
+  const {
+    onAppel,
+    onEtat,
+    onAgregat,
+    historique = 25,
+    periodePollingMs = 10_000,
+  } = opts;
+
+  // --- 1. Mode mock : flux simulé, déterministe, hors-ligne ---------------
+  if (USE_MOCKS) {
+    let i = 0;
+    let intervalle: ReturnType<typeof setInterval> | undefined;
+    const amorce = setTimeout(() => {
+      onEtat("connecte");
+      intervalle = setInterval(() => {
+        const modele = mockGreenitAppels[i % mockGreenitAppels.length];
+        i += 1;
+        onAppel({ ...modele, ts: new Date().toISOString() });
+      }, MOCK_PERIODE_MS);
+    }, MOCK_DELAI_INITIAL_MS);
+
+    return {
+      fermer: () => {
+        clearTimeout(amorce);
+        if (intervalle) clearInterval(intervalle);
+      },
+    };
+  }
+
+  let ferme = false;
+  let source: EventSource | null = null;
+  let sondage: ReturnType<typeof setInterval> | undefined;
+
+  // --- 3. Repli polling ---------------------------------------------------
+  function demarrerPolling() {
+    if (ferme || sondage) return;
+    onEtat("polling");
+    const tirer = () => {
+      api
+        .greenit()
+        .then((g) => {
+          if (!ferme) onAgregat?.(g);
+        })
+        .catch(() => {
+          if (!ferme) onEtat("deconnecte");
+        });
+    };
+    tirer();
+    sondage = setInterval(tirer, periodePollingMs);
+  }
+
+  // --- 2. SSE -------------------------------------------------------------
+  if (typeof EventSource === "undefined") {
+    demarrerPolling();
+  } else {
+    onEtat("connexion");
+    const qs = queryString({ historique, heartbeat_s: 15, duree_max_s: 3600 });
+    source = new EventSource(`${BASE}/greenit/stream${qs}`);
+
+    source.addEventListener("init", () => onEtat("connecte"));
+    source.addEventListener("heartbeat", () => onEtat("connecte"));
+    source.addEventListener("appel", (e) => {
+      const appel = parseAppel((e as MessageEvent).data);
+      if (appel) onAppel(appel);
+    });
+    source.addEventListener("fin", () => {
+      // Le serveur borne la durée de vie du flux : on bascule en polling
+      // plutôt que de laisser l'écran figé en « connecté ».
+      source?.close();
+      source = null;
+      if (!ferme) demarrerPolling();
+    });
+    source.onerror = () => {
+      // EventSource retente seul ; au-delà d'un état CLOSED, on replie.
+      if (ferme) return;
+      if (source && source.readyState === 2 /* CLOSED */) {
+        source = null;
+        demarrerPolling();
+      } else {
+        onEtat("connexion");
+      }
+    };
+  }
+
+  return {
+    fermer: () => {
+      ferme = true;
+      if (sondage) clearInterval(sondage);
+      source?.close();
+      source = null;
+    },
+  };
+}

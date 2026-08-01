@@ -109,6 +109,68 @@ class UsageResponse(BaseModel):
     top_fiches: list[TopFicheOut] = []
 
 
+# --- 9. /api/greenit -------------------------------------------------------
+# ⚠️ `energie_wh` et `co2e_g` sont des ESTIMATIONS (facteurs paramétrables de
+# knowledge/greenit.yaml), jamais des mesures certifiées. Le contrat porte cette
+# mise en garde jusque dans la réponse (`estimation`, `note_estimation`) pour
+# qu'aucun consommateur ne puisse les présenter comme un bilan opposable.
+
+class GreenitParModeleOut(BaseModel):
+    modele: str
+    nb_appels: int
+    tokens: float
+    cout: float
+    energie_wh: float
+    co2e_g: float
+    octets: int = 0
+    duree_ms: float = 0.0
+
+
+class GreenitParFournisseurOut(BaseModel):
+    fournisseur: str
+    nb_appels: int
+    tokens: float
+    cout: float
+    energie_wh: float
+    co2e_g: float
+    octets: int = 0
+    duree_ms: float = 0.0
+
+
+class GreenitEconomiesOut(BaseModel):
+    # Économies déduites des cache-hits : un cache-hit = un appel évité.
+    appels_evites: int
+    cout_evite_usd: float
+    energie_wh_evitee: float = 0.0
+    co2e_evite_g: float
+    methode: str = ""
+
+
+class GreenitResponse(BaseModel):
+    cout_total_usd: float
+    devise: str = "USD"
+    energie_wh_total: float
+    co2e_g_total: float
+    octets_total: int
+    duree_ms_totale: float
+    nb_appels: int
+    nb_cache_hits: int
+    nb_erreurs: int = 0
+    nb_lignes_illisibles: int = 0
+    taux_cache: float
+    economies: GreenitEconomiesOut
+    par_modele: list[GreenitParModeleOut] = []
+    par_fournisseur: list[GreenitParFournisseurOut] = []
+    # Métadonnées d'honnêteté : estimation, source des facteurs, part des appels
+    # réellement instrumentés (le reste compte pour 0 dans l'empreinte).
+    estimation: bool = True
+    note_estimation: str = ""
+    source_facteurs: str = "knowledge/greenit.yaml"
+    couverture_greenit: float = 0.0
+    ledger_present: bool = False
+    ledger_path: str = ""
+
+
 # --- 7. /api/icp -----------------------------------------------------------
 
 class IcpOut(BaseModel):

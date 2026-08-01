@@ -20,12 +20,20 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
-from fastapi import FastAPI, HTTPException, Query  # noqa: E402
-from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+import asyncio  # noqa: E402
+import json  # noqa: E402
+import time  # noqa: E402
+from typing import AsyncIterator  # noqa: E402
 
+from fastapi import FastAPI, HTTPException, Query, Request  # noqa: E402
+from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
+from fastapi.responses import StreamingResponse  # noqa: E402
+
+from webapp.backend import greenit as greenit_mod  # noqa: E402
 from webapp.backend import services  # noqa: E402
 from webapp.backend.schemas import (  # noqa: E402
     FunnelResponse,
+    GreenitResponse,
     HealthResponse,
     IcpOut,
     PreflightResponse,
@@ -122,6 +130,132 @@ def usage(depuis: str | None = Query(default=None)) -> UsageResponse:
             detail="Paramètre 'depuis' invalide, format attendu : YYYY-MM-DD.",
         )
     return UsageResponse(**data)
+
+
+# ---------------------------------------------------------------------------
+# 9. GreenIT — agrégat d'efficience
+# ---------------------------------------------------------------------------
+
+@app.get("/api/greenit", response_model=GreenitResponse, tags=["greenit"])
+def greenit(depuis: str | None = Query(default=None)) -> GreenitResponse:
+    """Coût, énergie, CO2e, octets et économies de cache du grand livre.
+
+    ⚠️ energie_wh / co2e_g sont des ESTIMATIONS (facteurs de
+    knowledge/greenit.yaml), pas des mesures. La réponse le déclare
+    explicitement (`estimation`, `note_estimation`).
+    """
+    try:
+        data = services.get_greenit(depuis=depuis)
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail="Paramètre 'depuis' invalide, format attendu : YYYY-MM-DD.",
+        )
+    return GreenitResponse(**data)
+
+
+# ---------------------------------------------------------------------------
+# 10. GreenIT — flux temps réel (SSE)
+# ---------------------------------------------------------------------------
+
+def _sse(evenement: str, donnees: dict) -> str:
+    """Formate un message Server-Sent Events (une trame `event:` + `data:`)."""
+    charge = json.dumps(donnees, ensure_ascii=False)
+    return f"event: {evenement}\ndata: {charge}\n\n"
+
+
+@app.get("/api/greenit/stream", tags=["greenit"])
+async def greenit_stream(
+    request: Request,
+    historique: int = Query(default=0, ge=0, le=200),
+    limite: int = Query(default=0, ge=0, le=10_000),
+    duree_max_s: float = Query(default=300.0, gt=0, le=3600),
+    intervalle_s: float = Query(default=1.0, gt=0, le=30),
+    heartbeat_s: float = Query(default=15.0, gt=0, le=120),
+    depuis_debut: bool = Query(default=False),
+) -> StreamingResponse:
+    """Suit `api_usage.log` en direct : une trame SSE par nouvelle ligne.
+
+    Paramètres de bornage — indispensables pour qu'un test (ou un client
+    distrait) ne laisse pas tourner un générateur indéfiniment :
+      - `limite`      : nombre max d'événements `appel` avant fermeture (0 = illimité) ;
+      - `duree_max_s` : durée de vie maximale du flux ;
+      - `intervalle_s`: période de scrutation du fichier ;
+      - `heartbeat_s` : période des trames `heartbeat` (garde la connexion vivante
+        à travers les proxies et permet au front d'afficher « connecté ») ;
+      - `historique`  : rejoue les N dernières lignes déjà journalisées à l'ouverture ;
+      - `depuis_debut`: suit le fichier depuis l'octet 0 au lieu de sa fin.
+
+    Lecture seule stricte : on ne fait qu'ouvrir le journal en lecture.
+    """
+    tail = services.greenit_tail(depuis_debut=depuis_debut)
+    passe = services.greenit_historique(historique) if historique else []
+
+    async def flux() -> AsyncIterator[str]:
+        debut = time.monotonic()
+        dernier_battement = debut
+        envoyes = 0
+
+        yield _sse(
+            "init",
+            {
+                "ts": greenit_mod.horodatage(),
+                "offset": tail.offset,
+                "ledger_present": tail.path.is_file(),
+                "estimation": True,
+                "note_estimation": greenit_mod.NOTE_ESTIMATION,
+            },
+        )
+        for ligne in passe:
+            yield _sse("appel", ligne)
+
+        # Boucle de scrutation. Si le client raccroche, Starlette annule la
+        # tâche : la CancelledError remonte et referme le générateur — rien à
+        # libérer nous-mêmes (le tail ne garde aucun descripteur ouvert).
+        raison = "duree_max"
+        while True:
+            # Déconnexion détectée par sondage non bloquant → arrêt propre.
+            if await request.is_disconnected():
+                raison = "deconnexion"
+                break
+
+            for ligne in tail.lire_nouvelles():
+                yield _sse("appel", ligne)
+                envoyes += 1
+                dernier_battement = time.monotonic()
+                if limite and envoyes >= limite:
+                    break
+
+            if limite and envoyes >= limite:
+                raison = "limite"
+                break
+
+            maintenant = time.monotonic()
+            if maintenant - debut >= duree_max_s:
+                raison = "duree_max"
+                break
+            if maintenant - dernier_battement >= heartbeat_s:
+                dernier_battement = maintenant
+                yield _sse(
+                    "heartbeat",
+                    {"ts": greenit_mod.horodatage(), "offset": tail.offset},
+                )
+
+            await asyncio.sleep(intervalle_s)
+
+        yield _sse("fin", {"raison": raison, "evenements": envoyes})
+
+    return StreamingResponse(
+        flux(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            # Désactive la bufferisation côté proxy (nginx) : sans ça, le flux
+            # arrive par paquets et perd tout intérêt « temps réel ».
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 # ---------------------------------------------------------------------------

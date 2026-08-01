@@ -9,6 +9,7 @@ const LINKS = [
   { to: "/", label: "Tableau de bord", end: true },
   { to: "/prospects", label: "Prospects", end: false },
   { to: "/usage", label: "Coûts API", end: false },
+  { to: "/greenit", label: "GreenIT", end: false },
   { to: "/preflight", label: "Préflight", end: false },
 ];
 

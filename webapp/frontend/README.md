@@ -28,14 +28,24 @@ rapport Markdown d'exemple. Aucun réseau n'est touché.
 
 ## Brancher le vrai backend (FastAPI)
 
-Le backend expose l'API sous `/api` sur `http://localhost:8000`. Vite proxifie
-`/api` vers ce port (voir `vite.config.ts`).
+**Le plus simple — tout lancer d'un coup** (backend + front déjà branchés) :
 
 ```bash
-cp .env.example .env
-# éditer .env :
-#   VITE_USE_MOCKS=false
-npm run dev        # /api → http://localhost:8000 (proxy Vite)
+./webapp/start-dev.sh          # depuis la racine du dépôt ; Ctrl-C arrête les deux
+./webapp/start-dev.sh --help   # options : --vault, --api-port, --web-port, --ledger, --mocks
+```
+
+Manuellement : le backend expose l'API sous `/api` sur `http://localhost:8000`,
+Vite proxifie `/api` vers ce port (voir `vite.config.ts`, cible surchargeable
+par `VITE_API_TARGET`).
+
+```bash
+# terminal 1 — depuis la racine du dépôt
+VAULT_PATH=vault uvicorn webapp.backend.app:app --reload --port 8000
+
+# terminal 2
+cp .env.example .env      # puis VITE_USE_MOCKS=false
+npm run dev               # /api → http://localhost:8000 (proxy Vite)
 ```
 
 Ou en une ligne :
@@ -43,6 +53,10 @@ Ou en une ligne :
 ```bash
 VITE_USE_MOCKS=false npm run dev
 ```
+
+Le proxy est configuré sans buffering ni compression pour que le flux SSE de
+`/api/greenit/stream` traverse en **temps réel** (sinon les événements
+arriveraient tous à la fermeture de la requête).
 
 ## Scripts
 
@@ -62,13 +76,46 @@ VITE_USE_MOCKS=false npm run dev
 - **/prospects/:slug** — fiche complète + rendu Markdown sûr du rapport, contact
   avec mention RGPD, gaps majeurs, accroche.
 - **/usage** — coûts par fournisseur (table + barres), top fiches, taux de cache.
+- **/greenit** — efficience en **temps réel** (voir ci-dessous).
 - **/preflight** — les contrôles GO/NO-GO avec niveau (bloquant/warn) et pastille.
+
+## Écran GreenIT — observabilité temps réel
+
+Tableau de bord d'efficience alimenté par le flux SSE `/api/greenit/stream` :
+
+- **Tuiles** : coût total, énergie (Wh), CO₂e (g), octets transférés, taux de
+  cache. Elles bougent **en direct** — chaque appel reçu est appliqué sur
+  l'agrégat courant côté client (`src/lib/greenit.ts`, fonctions pures), avec
+  exactement les conventions du backend (un cache-hit n'est pas un appel ; un
+  `budget_depasse` n'impute ni coût ni empreinte).
+- **Flux des appels** : les 40 derniers appels (heure, fournisseur/endpoint,
+  modèle/profil, coût, octets, durée, CO₂e, état). L'**état de la liaison** est
+  toujours affiché — `En direct`, `Connexion…`, `Repli polling`, `Déconnecté` —
+  avec une forme distincte par état, pas seulement une couleur.
+- **Repli automatique** : si `EventSource` est indisponible ou si la connexion
+  tombe, le client bascule sur une interrogation périodique de `/api/greenit`.
+  L'écran l'annonce explicitement au lieu de faire semblant d'être en direct.
+- **Économies du cache** : appels évités, coût, énergie et CO₂e non dépensés.
+- **Ventilations** : barres par modèle et par fournisseur, avec `aria-label`
+  chiffré sur chaque barre.
+
+> ⚠️ **Énergie et CO₂e sont des ESTIMATIONS** issues des facteurs paramétrables
+> de `knowledge/greenit.yaml`. Un bandeau permanent et non masquable le rappelle
+> en haut de l'écran, les tuiles concernées sont marquées `~` et sous-titrées
+> « estimation », et la couverture réelle de l'instrumentation est affichée.
+> Ces chiffres servent à comparer des scénarios, jamais à produire un bilan
+> carbone opposable.
+
+En **mode mock**, le flux est simulé : une boucle de 6 appels représentatifs
+(LLM haiku, LLM sonnet, Places, cache-hit, erreur, refus de budget) est rejouée
+toutes les 2,5 s — l'écran est donc démontrable entièrement hors-ligne.
 
 ## Contrat d'API consommé
 
 Types dans `src/types.ts`, client typé dans `src/api.ts`. Endpoints (préfixe
 `/api`) : `/health`, `/preflight`, `/pipeline/funnel`, `/prospects`,
-`/prospects/{slug}`, `/usage`, `/icp`, `/runs`.
+`/prospects/{slug}`, `/usage`, `/icp`, `/runs`, `/greenit`, `/greenit/stream`
+(SSE, consommé par `souscrireGreenit()`).
 
 ## Notes de conception
 

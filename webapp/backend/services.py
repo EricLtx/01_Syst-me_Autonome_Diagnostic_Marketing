@@ -28,6 +28,8 @@ from diagnostic.preflight import executer_preflights, verdict_global  # noqa: E4
 from diagnostic.usage import agreger, charger_ledger  # noqa: E402
 from diagnostic.vault_io import VaultIO  # noqa: E402
 
+from webapp.backend import greenit as greenit_mod  # noqa: E402
+
 
 # ---------------------------------------------------------------------------
 # Résolution des chemins (surchargables par variables d'environnement)
@@ -254,6 +256,39 @@ def get_usage(depuis: str | None = None) -> dict:
         "par_fournisseur": par_fournisseur,
         "top_fiches": top_fiches,
     }
+
+
+# ---------------------------------------------------------------------------
+# 6 bis. GreenIT — agrégat d'efficience + suivi temps réel du ledger
+# ---------------------------------------------------------------------------
+
+def get_greenit(depuis: str | None = None) -> dict:
+    """Agrégat coût / énergie / CO2e / octets du grand livre.
+
+    Lecture volontairement défensive (voir greenit.py) : fonctionne avec un
+    ledger absent, ancien (sans champs GreenIT) ou fraîchement instrumenté.
+    """
+    depuis_date: date | None = None
+    if depuis:
+        # Erreur de format → remontée par app.py en 400 clair.
+        depuis_date = date.fromisoformat(depuis)
+
+    path = ledger_path()
+    lignes, illisibles = greenit_mod.lire_ledger(path, depuis=depuis_date)
+    agregat = greenit_mod.agreger(lignes, nb_illisibles=illisibles)
+    agregat["ledger_present"] = path.is_file()
+    agregat["ledger_path"] = str(path)
+    return agregat
+
+
+def greenit_tail(*, depuis_debut: bool = False) -> greenit_mod.LedgerTail:
+    """Instancie un suiveur incrémental du ledger (utilisé par le flux SSE)."""
+    return greenit_mod.LedgerTail(ledger_path(), depuis_debut=depuis_debut)
+
+
+def greenit_historique(n: int) -> list[dict]:
+    """Les `n` derniers appels journalisés, pour amorcer le flux temps réel."""
+    return greenit_mod.dernieres_lignes(ledger_path(), n)
 
 
 # ---------------------------------------------------------------------------

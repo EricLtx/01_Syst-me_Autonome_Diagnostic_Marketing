@@ -6,6 +6,7 @@ import { Dashboard } from "./pages/Dashboard";
 import { Prospects } from "./pages/Prospects";
 import { ProspectDetail } from "./pages/ProspectDetail";
 import { Usage } from "./pages/Usage";
+import { GreenIT } from "./pages/GreenIT";
 import { Preflight } from "./pages/Preflight";
 
 export function App() {
@@ -16,6 +17,7 @@ export function App() {
         <Route path="/prospects" element={<Prospects />} />
         <Route path="/prospects/:slug" element={<ProspectDetail />} />
         <Route path="/usage" element={<Usage />} />
+        <Route path="/greenit" element={<GreenIT />} />
         <Route path="/preflight" element={<Preflight />} />
         <Route
           path="*"

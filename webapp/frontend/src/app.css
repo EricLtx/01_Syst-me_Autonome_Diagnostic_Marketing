@@ -761,6 +761,204 @@ table.data tbody tr:last-child td {
   font-size: 11.5px;
 }
 
+/* ---------- GREENIT ---------- */
+
+/* Avertissement méthodologique : volontairement visible et non masquable.
+   Ton "warn" (ambre) plutôt que critique : c'est une mise en garde, pas une
+   erreur. Lisible dans les deux thèmes via les tokens. */
+.estim-note {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 18px;
+  border: 1px solid color-mix(in srgb, var(--warn) 35%, var(--line));
+  background: var(--warn-soft);
+  border-radius: var(--radius);
+}
+.estim-note .badge {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  font-weight: 700;
+  color: var(--warn);
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--line));
+  border-radius: 6px;
+  padding: 3px 8px;
+  margin-top: 1px;
+}
+.estim-note p {
+  margin: 0;
+  font-size: 12.8px;
+  line-height: 1.6;
+  color: var(--ink);
+  max-width: 92ch;
+}
+.estim-note code {
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  padding: 0.05em 0.35em;
+  border-radius: 4px;
+}
+@media (max-width: 620px) {
+  .estim-note {
+    flex-direction: column;
+    gap: 8px;
+  }
+}
+
+/* État de la liaison temps réel — forme + couleur (jamais la couleur seule). */
+.flux-etat {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--muted);
+}
+.flux-etat .glyph {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.flux-etat.e-connecte {
+  color: var(--ok);
+}
+/* Pulsation discrète : le direct doit se voir sans distraire.
+   Neutralisée par prefers-reduced-motion (règle globale plus haut). */
+.flux-etat.e-connecte .glyph {
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.flux-etat.e-connexion {
+  color: var(--muted);
+}
+.flux-etat.e-connexion .glyph {
+  background: transparent;
+  border: 1.5px solid currentColor;
+}
+.flux-etat.e-polling {
+  color: var(--warn);
+}
+.flux-etat.e-polling .glyph {
+  border-radius: 2px;
+}
+.flux-etat.e-deconnecte,
+.flux-etat.e-termine {
+  color: var(--crit);
+}
+.flux-etat.e-deconnecte .glyph,
+.flux-etat.e-termine .glyph {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  border-radius: 0;
+}
+
+.flux-repli {
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warn);
+  background: var(--warn-soft);
+  border-radius: 0 8px 8px 0;
+}
+
+table.data.flux-table {
+  min-width: 780px;
+}
+table.data.flux-table tbody tr:first-child {
+  /* Le dernier appel reçu s'annonce brièvement. */
+  animation: entree 0.5s ease;
+}
+@keyframes entree {
+  from {
+    background: var(--accent-soft);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* Pastilles d'état d'un appel (mêmes règles de forme que .pill de statut). */
+.pill.r-ok {
+  color: var(--ok);
+}
+.pill.r-ok .glyph {
+  border-radius: 2px;
+}
+.pill.r-cache {
+  color: var(--accent);
+}
+.pill.r-cache .glyph {
+  border-radius: 50%;
+}
+.pill.r-erreur {
+  color: var(--crit);
+}
+.pill.r-erreur .glyph {
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  border-radius: 0;
+}
+.pill.r-budget {
+  color: var(--warn);
+}
+.pill.r-budget .glyph {
+  clip-path: polygon(20% 0, 80% 0, 100% 20%, 100% 80%, 80% 100%, 20% 100%, 0 80%, 0 20%);
+  border-radius: 0;
+}
+
+/* Encart « économies » : le seul bloc à fond accentué de la page. */
+.panel.eco {
+  border-color: color-mix(in srgb, var(--ok) 30%, var(--line));
+  background: linear-gradient(180deg, var(--ok-soft), transparent 70%), var(--panel);
+}
+.eco-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 14px;
+}
+.eco-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.eco-item .k {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.eco-item .v {
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  color: var(--ok);
+  font-variant-numeric: tabular-nums;
+}
+.eco-methode {
+  margin: 14px 0 0;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 90ch;
+}
+
 /* ---------- MISC ---------- */
 .btn {
   font-family: var(--sans);
