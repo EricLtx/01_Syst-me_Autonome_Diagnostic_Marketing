@@ -71,4 +71,30 @@ chaque itération, l'**agent de revue** :
 > Entrées ajoutées par le chef de projet après chaque revue. Format :
 > `AAAA-MM-JJ · chantier · itération n · taux · verdict · backlog relancé`.
 
-_(à compléter au fil des itérations)_
+### Itération 1 — Palier 1 / J+30 (2026-08-01)
+
+Vérification factuelle par le chef de projet + audit indépendant de l'agent de
+revue anti-hallucination (re-exécution réelle de chaque contrôle, aucun rapport
+d'agent pris pour argent comptant).
+
+| Chantier | Assertions | Taux | Verdict | Backlog relancé |
+|----------|:----------:|:----:|---------|-----------------|
+| CORE (orchestrateur DAG, `36380c8`) | 12/12 | **100 %** | CLEARED | — |
+| BACKEND (API FastAPI read-only, `b5430d1`) | 7/7 | **100 %** | CLEARED | — |
+| FRONTEND (cockpit React, `25ea9d0`) | 8/8 | **100 %** | CLEARED | — |
+
+**Preuves clés (exécutées) :** `pytest tests/` → 403 passed (365 intacts + 38
+nouveaux) ; `pytest webapp/backend/tests` → 18 passed ; `npm run build` OK +
+`npm run test` → 17 passed. Garde-fou AST étendu et vert ; ApiIO unique injectée
+**par identité** (test `... is api`) ; orchestrateur borné à
+`decouvert→diagnostique` (porte humaine jamais franchie) ; backend strictement
+lecture seule (aucune écriture vault, aucun `api_io`).
+
+**Hallucinations détectées : aucune.** Toutes les affirmations des messages de
+commit confirmées par exécution. Invariants d'architecture tenus (vault_io seul
+écrivain, api_io seul réseau sortant).
+
+**Trouvaille corrigée (hygiène, basse) :** caches `*.tsbuildinfo` committés par
+inadvertance → ajoutés au `.gitignore` et dé-suivis.
+
+Porte 97 % franchie sur les trois chantiers, aucune relance nécessaire.
