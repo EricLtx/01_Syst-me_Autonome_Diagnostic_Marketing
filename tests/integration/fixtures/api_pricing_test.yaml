@@ -1,0 +1,66 @@
+# tests/integration/fixtures/api_pricing_test.yaml
+#
+# Grille tarifaire de TEST — ne remplace JAMAIS knowledge/api_pricing.yaml.
+# Ce fichier existe pour une seule raison : la grille de production a tous ses
+# prix et budgets à 0 (placeholders Phase D), ce qui rend le préflight
+# structurellement NO-GO et les coûts du grand livre nuls. Les tests
+# d'intégration ont besoin de l'inverse : des prix NON NULS (pour vérifier que
+# le coût remonte bien dans api_usage.log) et des budgets > 0 (pour que le
+# préflight puisse passer GO en contexte de test).
+#
+# Les valeurs ci-dessous sont ILLUSTRATIVES, pas un relevé de tarifs officiels.
+# Le relevé réel reste la tâche Phase D sur knowledge/api_pricing.yaml.
+
+devise: USD
+releve_le: 2026-08-01   # date fictive : fixe, pour un préflight déterministe
+
+fournisseurs:
+
+  anthropic:
+    unite: token
+    endpoints:
+      messages:
+        prix_par_unite:
+          input_tokens:                   0.000003
+          output_tokens:                  0.000015
+          cache_read_input_tokens:        0.0000003
+          cache_creation_input_tokens:    0.00000375
+
+  serp:
+    unite: requete
+    endpoints:
+      search:   { prix_par_unite: { requetes: 0.005 } }
+      maps:     { prix_par_unite: { requetes: 0.005 } }
+      reviews:  { prix_par_unite: { requetes: 0.005 } }
+
+  google_places:
+    unite: requete
+    endpoints:
+      text_search:    { prix_par_unite: { requetes: 0.032 } }
+      place_details:  { prix_par_unite: { requetes: 0.017 } }
+      nearby_search:  { prix_par_unite: { requetes: 0.032 } }
+
+  apollo:
+    unite: credit
+    endpoints:
+      people_enrichment:   { prix_par_unite: { credits: 0.02 } }
+      organization_search: { prix_par_unite: { credits: 0.02 } }
+
+  http:
+    # Fetch statique : coût réseau réellement nul, on journalise le volume.
+    unite: requete
+    endpoints:
+      get: { prix_par_unite: { requetes: 0.0 } }
+
+# Budgets de garde-fou — > 0, sinon le préflight est bloquant (§7.2 SPEC-J5).
+# Dimensionnés pour un run de test complet, jamais pour un pilote réel.
+budgets:
+  serp:
+    unites_max:
+      requetes: 200
+  apollo:
+    unites_max:
+      credits: 50
+  google_places:
+    unites_max:
+      requetes: 300

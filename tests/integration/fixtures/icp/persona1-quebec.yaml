@@ -1,0 +1,46 @@
+# tests/integration/fixtures/icp/persona1-quebec.yaml
+#
+# Copie de test de icp/persona1-quebec.yaml, RÉDUITE : 2 gabarits × 2 localités
+# = 4 requêtes SERP au lieu de 18. Même icp_id, mêmes filtres, mêmes titres
+# cibles — donc le même chemin de code, mais un test qui dure une fraction de
+# seconde. Chargé en pointant diagnostic.config.ICP_DIR sur ce dossier.
+
+icp_id: persona1-quebec
+persona: 1
+marche: quebec
+description: "Détaillant / installateur HVAC (climatisation, chauffage, thermopompe) — Québec (fixture de test)"
+
+requetes:
+  gabarits:
+    - "installateur thermopompe {localite}"
+    - "entreprise climatisation chauffage {localite}"
+  localites:
+    - "Québec"
+    - "Lévis"
+  max_resultats_par_requete: 6
+
+filtres:
+  domaines_exclus:
+    - "pagesjaunes.ca"
+    - "yelp."
+    - "facebook.com"
+    - "linkedin.com"
+    - "411.ca"
+    - "houzz."
+    - "kijiji.ca"
+    - "groupon."
+  exiger_domaine_propre: true
+
+# Titres cibles IDENTIQUES à l'ICP de production : le test exerce la vraie
+# sémantique de filtrage des personnes, pas une variante assouplie.
+enrichissement:
+  titres_cibles:
+    - "propriétaire"
+    - "président"
+    - "directeur général"
+    - "directeur"
+    - "office manager"
+    - "owner"
+    - "president"
+    - "general manager"
+  max_enrichissements: 10

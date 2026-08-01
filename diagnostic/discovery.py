@@ -86,8 +86,12 @@ class DiscoveryCollector:
         import os
         import requests as _req  # lazy : toujours via api_io bus (§9.6)
 
+        # Base surchargeable : le défaut EST la production, donc zéro changement
+        # de comportement en exploitation. SERP_BASE_URL n'est posée qu'en test
+        # d'intégration, pour pointer le faux serveur local (tests/integration).
+        base = os.getenv("SERP_BASE_URL", "https://serpapi.com").rstrip("/")
         resp = _req.get(
-            "https://serpapi.com/search",
+            f"{base}/search",
             params={
                 "q": requete,
                 "api_key": os.getenv("SERP_API_KEY", ""),

@@ -85,8 +85,12 @@ class PersonEnrichment:
     def _apollo_people_search(self, domaine: str) -> dict:
         import requests as _req  # lazy : toujours via api_io bus (§9.6)
 
+        # Base surchargeable : le défaut EST la production, donc zéro changement
+        # de comportement en exploitation. APOLLO_BASE_URL n'est posée qu'en test
+        # d'intégration, pour pointer le faux serveur local (tests/integration).
+        base = os.getenv("APOLLO_BASE_URL", "https://api.apollo.io").rstrip("/")
         resp = _req.post(
-            "https://api.apollo.io/v1/people/search",
+            f"{base}/v1/people/search",
             json={
                 "organization_domains": [domaine],
                 "person_titles": self.icp.enrichissement.titres_cibles,

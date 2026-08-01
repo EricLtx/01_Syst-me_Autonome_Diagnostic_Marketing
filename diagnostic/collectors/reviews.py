@@ -84,8 +84,11 @@ class ReviewsCollector(Collector):
 
     def _places_text_search(self, query: str) -> dict:
         import requests as _req  # lazy : appel toujours via api_io bus
+        # Base surchargeable : le défaut EST la production (zéro changement de
+        # comportement). PLACES_BASE_URL n'est posée qu'en test d'intégration.
+        base = os.getenv("PLACES_BASE_URL", "https://maps.googleapis.com").rstrip("/")
         resp = _req.get(
-            "https://maps.googleapis.com/maps/api/place/textsearch/json",
+            f"{base}/maps/api/place/textsearch/json",
             params={"query": query, "key": os.getenv("GOOGLE_PLACES_API_KEY", "")},
             timeout=10,
         )
@@ -93,8 +96,9 @@ class ReviewsCollector(Collector):
 
     def _places_details(self, place_id: str) -> dict:
         import requests as _req  # lazy : appel toujours via api_io bus
+        base = os.getenv("PLACES_BASE_URL", "https://maps.googleapis.com").rstrip("/")
         resp = _req.get(
-            "https://maps.googleapis.com/maps/api/place/details/json",
+            f"{base}/maps/api/place/details/json",
             params={
                 "place_id": place_id,
                 "fields": "rating,user_ratings_total,reviews,photos",
