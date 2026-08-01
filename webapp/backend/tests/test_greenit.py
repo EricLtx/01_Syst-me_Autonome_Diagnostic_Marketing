@@ -4,13 +4,15 @@ test_greenit.py — observabilité GreenIT : agrégat `/api/greenit` et flux SSE
 
 Deux exigences structurent ces tests :
 
-1. **Tolérance au ledger hétérogène.** Le chantier d'instrumentation GreenIT
-   tourne en parallèle : `api_usage.log` peut être absent, ne contenir que des
-   lignes ANCIENNES (sans `energie_wh`/`co2e_g`/…), ou panacher ancien et
-   nouveau. Chacun de ces cas a son test : la vue doit répondre 200 partout.
-   Les lignes sont écrites en JSON brut (et non via `LedgerEntry`, qui est en
-   `extra="forbid"` et refuserait les champs GreenIT tant que le schéma amont
-   n'a pas atterri).
+1. **Tolérance au ledger hétérogène.** `api_usage.log` peut être absent, ne
+   contenir que des lignes ANCIENNES (sans `energie_wh`/`co2e_g`/…), panacher
+   ancien et nouveau, ou porter des lignes corrompues. Chacun de ces cas a son
+   test : la vue doit répondre 200 partout.
+   Les lignes des fixtures sont écrites en JSON brut, et non via `LedgerEntry` :
+   non pas parce que celui-ci refuserait les champs GreenIT (il les déclare
+   désormais), mais parce qu'on doit pouvoir fabriquer ici des lignes que ce
+   schéma d'écriture REJETTE — ligne tronquée, `resultat` hors énumération,
+   champ inconnu de demain — précisément les cas que la vue doit encaisser.
 
 2. **Flux borné.** Le SSE est toujours ouvert avec `limite` et/ou `duree_max_s`
    pour que chaque test se termine sans dépendre d'un timeout externe.

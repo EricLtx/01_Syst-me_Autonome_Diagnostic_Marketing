@@ -152,10 +152,18 @@ python -m pytest webapp/backend/tests -q
   touche `VaultIO`, `usage`, `preflight`, `icp_schema`. Read-only strict.
 - `schemas.py` : modèles de réponse Pydantic (contrat de sortie stable).
 - `greenit.py` : lecture **défensive** du grand livre + agrégation d'efficience
-  + tail incrémental pour le SSE. Volontairement séparé de `services.py` : les
-  champs GreenIT du ledger sont optionnels et `diagnostic.api_schema.LedgerEntry`
-  est en `extra="forbid"`, donc valider avec lui ferait *rejeter* les lignes
-  enrichies. On parse ici le JSONL brut avec des défauts (0 / `None`), ce qui
-  rend la vue insensible à l'état d'avancement de l'instrumentation amont :
-  ledger absent, ancien, enrichi ou panaché des trois, la réponse reste 200.
+  + tail incrémental pour le SSE. Volontairement séparé de `services.py`.
+  `LedgerEntry` sait relire les lignes enrichies (les 7 champs GreenIT y sont
+  déclarés) — la raison n'est pas la compatibilité amont, mais la **nature du
+  schéma** : `LedgerEntry` est un contrat d'**écriture**, strict par
+  construction (`extra="forbid"`, `ts: datetime`, `resultat` en `Literal`).
+  Une vue de consultation a le devoir inverse — ne jamais tomber sur ce qu'elle
+  lit. La validation stricte lève (vérifié par exécution) sur un **champ
+  futur** (`pue`, `region_datacenter`… → 500 tant que webapp n'a pas rattrapé
+  le schéma, pour un champ qui ne la concerne pas) et sur une **ligne
+  dégradée** (`ts` malformé, `unites: null`, `resultat` hors énumération —
+  cas normaux d'un journal append-only lu pendant qu'un autre processus écrit).
+  On parse donc le JSONL brut avec des défauts (0 / `None`) et on compte
+  l'illisible (`nb_lignes_illisibles`) : ledger absent, ancien, enrichi, en
+  avance sur nous ou panaché, la réponse reste 200.
 ```

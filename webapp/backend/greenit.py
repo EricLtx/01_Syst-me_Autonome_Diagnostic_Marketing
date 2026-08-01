@@ -3,17 +3,32 @@ greenit.py — lecture et agrégation « efficience » du grand livre `api_usage
 
 Pourquoi un module dédié plutôt qu'une extension de services.py :
 
-1. **Parsing défensif volontaire.** Le chantier GreenIT enrichit le ledger avec
-   des champs OPTIONNELS (`octets_entrants`, `octets_sortants`, `duree_ms`,
-   `energie_wh`, `co2e_g`, `modele`, `profil`). Les anciennes lignes ne les ont
-   pas, et `diagnostic.api_schema.LedgerEntry` est en `extra="forbid"` : valider
-   avec lui ferait *rejeter* les lignes enrichies tant que le schéma amont n'a
-   pas atterri. On lit donc le JSONL brut et on applique des défauts (0 / None).
-   Conséquence : cette vue fonctionne avec un ledger absent, ancien, enrichi, ou
-   panaché des trois.
+1. **Parsing défensif volontaire.** `diagnostic.api_schema.LedgerEntry` sait
+   aujourd'hui relire une ligne enrichie (les 7 champs GreenIT y sont déclarés,
+   optionnels avec défauts) : ce n'est donc PAS un problème de compatibilité
+   amont. Le motif est autre — `LedgerEntry` est un schéma d'ÉCRITURE, strict
+   par construction (`extra="forbid"`, `ts: datetime`, `resultat` en Literal),
+   et c'est très bien pour garantir ce qu'on journalise. Mais une vue de
+   consultation a le devoir inverse : ne jamais tomber sur ce qu'elle lit.
+   Or `LedgerEntry.model_validate` lève (vérifié par exécution) sur :
+     - un **champ futur** — ajouter demain un `pue` ou un `region_datacenter`
+       au ledger ferait passer le cockpit en 500 tant que webapp n'a pas
+       rattrapé le schéma, alors que ce champ ne le concerne même pas ;
+     - une **ligne dégradée** — `ts` malformé ou absent, `unites: null`, un
+       `resultat` hors énumération. Cas normaux pour un journal append-only lu
+       à chaud, pendant qu'un autre processus écrit.
+   On lit donc le JSONL brut avec des défauts (0 / None) et on ignore ce qui
+   est illisible en le comptant (`nb_lignes_illisibles`). Conséquence : cette
+   vue dégrade proprement là où la validation stricte ferait tomber l'écran —
+   ledger absent, ancien, enrichi, en avance sur nous, ou panaché.
 
 2. **Suivi incrémental.** Le flux SSE a besoin d'un tail par offset d'octets,
    qui n'a rien à faire dans une couche d'agrégats.
+
+Contrepartie assumée : le coût total est calculé ici ET dans
+`diagnostic.usage.agreger`. Deux sources de vérité pour un chiffre financier,
+c'est une dette — tenue par le test de non-régression croisé
+`test_greenit_usage_convergence.py`, qui échoue si les deux divergent.
 
 STRICTEMENT EN LECTURE : ce module ouvre `api_usage.log` en lecture seule. Aucune
 écriture, aucun réseau, aucun `api_io`, aucune transition d'état.
