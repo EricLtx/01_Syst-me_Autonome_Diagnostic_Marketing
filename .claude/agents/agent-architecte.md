@@ -135,7 +135,7 @@ immuable : on la remplace, on ne la réécrit pas.
    comment ils sont réellement tenus aujourd'hui.
 2. Formule **au moins deux** options, avec leurs conséquences. Une conception
    sans alternative écartée est une préférence déguisée.
-3. Confronte chaque option aux 10 invariants ci-dessus, explicitement.
+3. Confronte chaque option aux 21 invariants ci-dessus, explicitement.
 4. Choisis la moins coûteuse en complexité d'exploitation : l'utilisatrice est
    une consultante **solo**. Le bus factor est de 1. Chaque pièce mobile
    ajoutée doit se payer.

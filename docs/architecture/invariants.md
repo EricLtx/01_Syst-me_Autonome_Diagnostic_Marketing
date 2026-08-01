@@ -557,7 +557,11 @@ python run_preflight.py; echo "code de sortie : $?"   # 1 = NO-GO attendu aujour
 
 **Invariant.** Le choix du modèle LLM résulte de règles **explicites** évaluées
 sur un contexte. Mêmes entrées → même profil. **Aucun LLM ne décide du routage**,
-et aucun nom de modèle n'est codé en dur.
+et aucun nom de modèle n'est codé en dur **hors constantes de repli explicites**
+(`synthesis.py::MODELE_REPLI` et `greenit.py::CONFIG_DEFAUT`, qui pointent toutes
+deux vers le modèle le moins cher et n'entrent en jeu que si `greenit.yaml` est
+absent ou illisible — une panne de configuration ne doit jamais faire basculer la
+production sur le gros modèle).
 
 **Pourquoi.** Le superviseur-planificateur LLM a été explicitement refusé par
 l'ADR 0001 (coût, non-déterminisme, charge cognitive). Faire décider un modèle

@@ -24,7 +24,7 @@ décrivent ce que le code fait **réellement**.
 Tu travailles en **orchestration parallèle** : d'autres agents modifient le
 dépôt pendant que tu écris. Un compte relevé au début de ta tâche est
 *probablement faux* à la fin. C'est ainsi qu'à l'itération 2 la documentation a
-décrit un cockpit à 8 routes et 5 écrans alors qu'il en avait 10 et 6 — le
+décrit un cockpit à 8 routes et 6 écrans alors qu'il en avait 10 et 6 — le
 chantier voisin avait atterri entre-temps. Résultat : 83,3 %, sous la porte
 97 %, relance.
 

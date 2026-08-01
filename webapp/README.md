@@ -112,7 +112,7 @@ en empreinte et ne fait tomber ni l'API ni l'écran.
 ## Tests
 
 ```bash
-python -m pytest webapp/backend/tests -q     # 38 tests
+python -m pytest webapp/backend/tests -q     # 45 tests
 cd webapp/frontend && npm run test           # 34 tests (Vitest)
 cd webapp/frontend && npm run build          # typecheck + bundle
 ```

@@ -432,7 +432,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
 
-## État des tests (527 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (533 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -448,17 +448,18 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_api_schema.py` | LedgerEntry, compute_cout | 20 |
 | `test_api_io.py` | ApiIO call/cache/budget/mesureur/garde-fou/câblage | 31 |
 | `test_collectors_phase_d.py` | §9.9 social passif, derniere_maj, repond_aux_avis, seo, injection | 33 |
-| `test_icp_schema.py` | §7.1 IcpConfig + §7.12 FicheProspect rétro-compat | ~20 |
-| `test_discovery.py` | §7.2-4 + §7.7 DiscoveryCollector (SERP, filtres, dédup) | ~30 |
-| `test_enrichment.py` | §7.6 + §7.8 PersonEnrichment + Contact minimisation | ~20 |
-| `test_discovery_vault.py` | §7.5, §7.9-11 dédup inter-runs, dry-run, fiche decouvert | ~20 |
+| `test_icp_schema.py` | §7.1 IcpConfig + §7.12 FicheProspect rétro-compat | 19 |
+| `test_discovery.py` | §7.2-4 + §7.7 DiscoveryCollector (SERP, filtres, dédup) | 36 |
+| `test_enrichment.py` | §7.6 + §7.8 PersonEnrichment + Contact minimisation | 16 |
+| `test_discovery_vault.py` | §7.5, §7.9-11 dédup inter-runs, dry-run, fiche decouvert | 16 |
 | `test_j5_phase0.py` | §13 signal_chaud/accroche, contrat JSON Diagnostic, api_pricing | 20 |
-| `test_export.py` | Tests 1-6 : sélection, mapping Kemana, anomalies, garde-fous | 22 |
-| `test_usage.py` | Tests 7-8 : agrégation ledger, taux cache, write_system_note | 20 |
-| `test_preflight.py` | Tests 9-12, 14 : GO/NO-GO, warn, garde-fous AST, régression | 27 |
-| `test_orchestrator.py` | CORE : DAG, tri topologique, verrou, ApiIO unique, machine à états, budget, tranches | ~35 |
-| `test_pipeline_cli.py` | CORE : CLI `run_pipeline.py` | ~4 |
+| `test_export.py` | Tests 1-6 : sélection, mapping Kemana, anomalies, garde-fous | 26 |
+| `test_usage.py` | Tests 7-8 : agrégation ledger, taux cache, write_system_note | 19 |
+| `test_preflight.py` | Tests 9-12, 14 : GO/NO-GO, warn, garde-fous AST, régression | 28 |
+| `test_orchestrator.py` | CORE : DAG, tri topologique, verrou, ApiIO unique, machine à états, budget, tranches | 34 |
+| `test_pipeline_cli.py` | CORE : CLI `run_pipeline.py` | 4 |
 | `test_greenit.py` | GreenIT : config, routage déterministe, max_tokens, empreinte, troncature, ledger, rétro-compat, intégration synthesis | **78** |
+| `test_doc_coherence.py` | Garde-fou : les chiffres documentés (tests, routes, écrans, invariants, agents) doivent être les chiffres réels | **6** |
 | `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur | **46** |
 | `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **45** |
 | `webapp/frontend/src/__tests__/` | Cockpit : api, dashboard, prospects, détail, greenit (Vitest) | **34** |
