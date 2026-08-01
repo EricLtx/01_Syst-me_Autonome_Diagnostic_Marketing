@@ -1,0 +1,8 @@
+# Dépendances de la façade HTTP read-only (cockpit opérateur).
+# Pas de client réseau sortant (pas de requests/anthropic) : cette API ne fait
+# aucun appel externe. httpx est présent uniquement pour fastapi.testclient.
+fastapi>=0.110
+uvicorn[standard]>=0.29
+httpx>=0.27
+pyyaml>=6.0
+pydantic>=2.0
