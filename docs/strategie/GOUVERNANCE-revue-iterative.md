@@ -98,3 +98,55 @@ commit confirmées par exécution. Invariants d'architecture tenus (vault_io seu
 inadvertance → ajoutés au `.gitignore` et dé-suivis.
 
 Porte 97 % franchie sur les trois chantiers, aucune relance nécessaire.
+
+### Itération 2 — GreenIT / WebApp / Intégration / Documentation (2026-08-01)
+
+Audit indépendant de l'agent de revue — **29 assertions ré-exécutées**, aucun
+rapport d'agent pris pour argent comptant.
+
+| Chantier | Assertions | Taux | Verdict | Backlog relancé |
+|----------|:----------:|:----:|---------|-----------------|
+| GREENIT (`6055e14`) | 9/9 | **100 %** | CLEARED | — |
+| INTÉGRATION (`0234af3`) | 7/7 | **100 %** | CLEARED | — |
+| WEBAPP (`d5b14d1`) | 7/7 | **100 %** | CLEARED | — |
+| DOCUMENTATION (`4585a10`) | 5/6 | **83,3 %** | **RELANCE** | D4 — chiffres cockpit périmés |
+
+**Preuves clés (exécutées) :** `pytest tests/` → 527 passed (dont 46 e2e) ;
+`pytest webapp/backend/tests` → 38 ; `npm run build` OK + 34 tests front ;
+`tests/test_greenit.py` → 78. Routage GreenIT déterministe et sans LLM (haiku
+par défaut, escalade sonnet sur règle YAML) ; cache-hit → coût ET empreinte à 0
+vérifiés sur ledger réel ; `synthesize()` sans clé avec `socket.connect` bloqué →
+repli déterministe, `anthropic` jamais importé ; `/api/greenit` répond 200 sur
+ledger absent / ancien / panaché+corrompu ; SSE clos en 2,0 s ; backend lecture
+seule prouvé par AST ; `run_preflight.py` → code 1 (NO-GO structurel confirmé).
+
+**Hallucinations détectées : 4.**
+1. `d5b14d1` justifiait la séparation de l'agrégat par un `extra="forbid"` qui
+   rejetterait les lignes enrichies — **faux**, `6055e14` avait déjà étendu
+   `LedgerEntry` (ligne enrichie ACCEPTÉE en test). *Relayée par le chef de
+   projet dans son message de commit — la revue l'a rattrapée.*
+2. `4585a10` décrit « 8 routes / 5 écrans » alors que le chantier WEBAPP de la
+   **même itération** en a livré 10 et 6 (instantané périmé).
+3. `README.md:248` annonçait 18 tests backend pour une commande qui en rend 38.
+4. `6055e14` annonçait 77 tests GreenIT — il y en a **78**. *Également relayée
+   par le chef de projet.*
+
+**Arbitrage — duplication socle/cockpit :** le risque invoqué n'existe pas. Les
+deux agrégats (`diagnostic/usage.py` et `webapp/backend/greenit.py`) convergent
+aujourd'hui **au centime** sur un ledger panaché (coût, appels, cache-hits, taux
+identiques). Mais rien ne teste cette convergence → **risque de divergence
+silencieuse**. Verdict : refactor recommandé, **non bloquant** ; un test de
+non-régression croisé est demandé au chantier WEBAPP.
+
+**Invariants d'architecture : tous tenus** (vault_io seul écrivain, api_io seul
+réseau sortant, cockpit lecture seule, machine à états bornée, DAG = donnée,
+outreach désactivé).
+
+**Enseignement de méthode :** en orchestration parallèle, l'agent de
+documentation doit re-vérifier ses chiffres **juste avant de rendre**, pas au
+moment où il les relève — sinon il fige un instantané que ses pairs ont déjà
+périmé. Consigne intégrée à la relance.
+
+**Relances lancées** (écosystème conservé, agents repris avec leur contexte) :
+documentation (backlog D4 + seconde passe), webapp (justification erronée +
+test croisé).
