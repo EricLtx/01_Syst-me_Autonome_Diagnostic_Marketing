@@ -1,0 +1,141 @@
+# knowledge/greenit.yaml — DONNÉE, pas du code.
+#
+# Stratégie d'efficience (FinOps / GreenIT) du bus d'I/O et de la couche LLM.
+# Même principe que api_pricing.yaml et rubric_*.yaml : on change une valeur ici,
+# jamais une ligne de diagnostic/greenit.py.
+#
+# Trois leviers, dans l'ordre de rentabilité :
+#   1. ROUTAGE     — envoyer le petit modèle par défaut, le gros seulement si prouvé nécessaire.
+#   2. FRUGALITÉ   — borner le prompt (entrée) et max_tokens (sortie), cacher agressivement.
+#   3. OBSERVABILITÉ — chiffrer énergie + CO2e de chaque appel pour rendre l'économie démontrable.
+#
+# ⚠️ AVERTISSEMENT MÉTHODOLOGIQUE — section `empreinte:`
+# Les facteurs ci-dessous sont des ORDRES DE GRANDEUR paramétrables, PAS des mesures
+# certifiées. Personne (ni Anthropic, ni Google, ni un fournisseur SERP) ne publie la
+# consommation réelle par requête. Ces chiffres servent à comparer des scénarios entre
+# eux (avec/sans cache, haiku vs sonnet, 300 vs 900 tokens de sortie) et à donner une
+# tendance — jamais à produire un bilan carbone opposable. Toute valeur affichée par
+# run_usage.py issue de ces facteurs DOIT être étiquetée « estimation ».
+# Pour un chiffrage opposable : faire réaliser une ACV par un tiers et remplacer ces
+# valeurs par les siennes (les noms de clés ne changent pas → zéro code à toucher).
+
+version: 1
+releve_le: null        # AAAA-MM-JJ — date du dernier réétalonnage des facteurs `empreinte`
+
+# ---------------------------------------------------------------------------
+# PROFILS — un profil = un couple (modèle, budget de sortie) + son étiquette
+# ---------------------------------------------------------------------------
+# Le profil est choisi par les règles de `routage:` (déterministes, jamais par un LLM).
+profils:
+
+  frugal:
+    # Le moins cher / le moins énergivore. Suffisant pour rédiger 120 mots à partir
+    # de faits déjà établis (le LLM ne raisonne pas ici, il met en forme).
+    modele: claude-haiku-4-5-20251001
+    max_tokens: 400
+    description: "Rédaction courte à partir de faits établis. Défaut absolu."
+
+  standard:
+    modele: claude-haiku-4-5-20251001
+    max_tokens: 600
+    description: "Défaut du pipeline diagnostic J1."
+
+  qualite:
+    # Modèle fort : réservé aux cas où le petit modèle a démontré son insuffisance
+    # (quality_check échoué) ou aux fiches à fort enjeu commercial.
+    modele: claude-sonnet-4-5
+    max_tokens: 900
+    description: "Escalade. Coût ~3-5x le profil standard : à déclencher, pas à subir."
+
+# ---------------------------------------------------------------------------
+# ROUTAGE — règles déterministes de sélection du profil (if/else piloté par YAML)
+# ---------------------------------------------------------------------------
+# Aucun LLM ne décide du routage. `choisir_modele()` évalue ces comparaisons
+# sur un dict de contexte fourni par l'appelant. Mêmes entrées → même sortie.
+routage:
+  profil_defaut: standard
+  profil_escalade: qualite
+
+  # "ou" = une seule règle vraie suffit à escalader ; "et" = toutes requises.
+  mode: ou
+
+  # Champs de contexte reconnus (fournis par synthesis.py) :
+  #   nb_failles            (int)   nombre de failles à rédiger
+  #   score_global          (float) score de maturité 0-100
+  #   quality_check_echoue  (bool)  le profil précédent a produit un audit rejeté par la QA
+  #   caracteres_prompt     (int)   taille du prompt assemblé
+  # Opérateurs : ">=", ">", "<=", "<", "==", "!=", "in"
+  regles_escalade:
+
+    - nom: quality_check_echoue
+      champ: quality_check_echoue
+      operateur: "=="
+      valeur: true
+      motif: "Le petit modèle a produit un audit rejeté par la QA — 2e passe justifiée."
+
+    - nom: failles_nombreuses
+      champ: nb_failles
+      operateur: ">="
+      valeur: 6
+      motif: "Beaucoup de matière à hiérarchiser : la synthèse devient un vrai exercice."
+
+    - nom: prospect_a_fort_score
+      champ: score_global
+      operateur: ">="
+      valeur: 75
+      motif: "Prospect mature : l'audit doit être irréprochable pour être crédible."
+
+# ---------------------------------------------------------------------------
+# FRUGALITÉ — bornes dures appliquées avant tout appel
+# ---------------------------------------------------------------------------
+frugalite:
+  # Levier #1 : borner l'ENTRÉE. Le prompt croît avec le nombre de failles ;
+  # sans borne, une fiche pathologique peut multiplier le coût par 10.
+  troncature_contexte_caracteres: 4000
+
+  # Garde-fou de dernier recours sur le prompt assemblé (bornes + gabarit fixe).
+  # Ne se déclenche jamais en régime normal : c'est un plafond, pas un réglage.
+  troncature_prompt_caracteres: 8000
+
+  # Levier #2 : borner la SORTIE. Écrase le max_tokens du profil s'il est plus grand
+  # (mettre `null` pour laisser chaque profil décider).
+  max_tokens_sortie: 600
+
+  # Levier #3 : durée de vie du cache disque d'api_io. Un cache-hit = coût 0,
+  # énergie ~0, CO2e ~0 : c'est l'économie la plus facile à démontrer.
+  cache_ttl_jours: 30
+
+  # Prompt caching côté fournisseur (tokens `cache_read_input_tokens`).
+  # Rentable seulement si un préfixe stable >1k tokens est réutilisé — pas le cas
+  # aujourd'hui (un prompt par prospect). À réévaluer si un système prompt long apparaît.
+  activer_prompt_caching: false
+
+# ---------------------------------------------------------------------------
+# EMPREINTE — facteurs d'estimation (⚠️ ORDRES DE GRANDEUR, voir avertissement en tête)
+# ---------------------------------------------------------------------------
+empreinte:
+  # Inférence LLM. La sortie coûte nettement plus que l'entrée (génération
+  # auto-régressive token par token vs pré-remplissage parallélisable) : le ratio
+  # importe plus que la valeur absolue pour arbitrer max_tokens.
+  wh_par_1k_tokens_entree: 0.05          # estimation
+  wh_par_1k_tokens_sortie: 0.30          # estimation
+  wh_par_1k_tokens_cache_lecture: 0.005  # estimation — tokens servis depuis le cache fournisseur
+
+  # Réseau / API non-LLM (SERP, Places, fetch HTTP) : coût par requête + par volume.
+  wh_par_requete_http: 0.10              # estimation (requête + terminaux + réseau)
+  wh_par_mo_transfere: 0.06              # estimation (Wh par mégaoctet transféré)
+
+  # Intensité carbone du mix électrique, en grammes CO2e par kWh.
+  # Clés = fragments recherchés (sans accent, minuscule) dans le champ `region`
+  # d'une fiche. Le premier fragment trouvé gagne ; sinon `defaut`.
+  intensite_carbone_g_par_kwh:
+    defaut: 475        # moyenne mondiale, ordre de grandeur
+    monde: 475
+    quebec: 2          # hydroélectricité quasi exclusive — très bas
+    canada: 130
+    suisse: 45         # hydro + nucléaire
+    romandie: 45
+    france: 60         # nucléaire + renouvelables
+    europe: 250
+    etats-unis: 370
+    usa: 370

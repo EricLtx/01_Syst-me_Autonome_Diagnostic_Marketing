@@ -31,6 +31,18 @@ class LedgerEntry(BaseModel):
     resultat: Literal["ok", "erreur", "budget_depasse"] = "ok"
     detail: str = ""                        # message d'erreur éventuel
 
+    # --- Extension GreenIT / FinOps -----------------------------------------
+    # Tous optionnels avec valeur par défaut : les lignes écrites avant cette
+    # extension se relisent sans migration (extra="forbid" interdit les champs
+    # inconnus, pas les champs manquants).
+    octets_entrants: int = 0               # volume reçu (réponse), 0 si non mesurable
+    octets_sortants: int = 0               # volume émis (requête), 0 si non mesurable
+    duree_ms: float = 0.0                  # durée réelle de l'appel, en millisecondes
+    energie_wh: float = 0.0                # ESTIMATION (knowledge/greenit.yaml) — pas une mesure
+    co2e_g: float = 0.0                    # ESTIMATION dérivée de energie_wh × intensité région
+    modele: str | None = None              # modèle LLM effectivement appelé (routage GreenIT)
+    profil: str | None = None              # profil d'efficience retenu : frugal | standard | qualite
+
     @classmethod
     def maintenant(cls, **kwargs) -> "LedgerEntry":
         """Constructeur avec ts = now UTC. Passe kwargs à __init__."""

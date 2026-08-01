@@ -11,6 +11,10 @@ laisser sortir ; sinon on retombe sur le repli déterministe.
 
 Le module tourne SANS clé API (repli déterministe). Tu branches le LLM
 quand tu veux, en posant ANTHROPIC_API_KEY dans l'environnement.
+
+Principe GreenIT : le modèle n'est PAS en dur. `greenit.choisir_modele()` route
+vers le plus petit modèle par défaut et n'escalade que sur condition explicite
+(règles YAML). Le prompt est borné avant émission. Voir knowledge/greenit.yaml.
 """
 
 from __future__ import annotations
@@ -18,9 +22,11 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from diagnostic import greenit
 from diagnostic.models import Company, Gap
 
-MODELE = "claude-sonnet-4-6"  # bon rapport qualité/coût pour de la rédaction
+# Repli si la config GreenIT est absente : le modèle le moins cher, jamais le plus gros.
+MODELE_REPLI = "claude-haiku-4-5-20251001"
 
 
 def synthesize(
@@ -31,16 +37,48 @@ def synthesize(
     knowledge: dict[str, Any] | None = None,
     api_io=None,
 ) -> tuple[str, str]:
-    """Retourne (accroche, mini_audit)."""
+    """Retourne (accroche, mini_audit).
+
+    Stratégie d'efficience : une première passe au profil routé (le plus frugal
+    possible). Si la QA rejette le résultat, une seule seconde passe est tentée
+    au profil d'escalade — et seulement si l'escalade change réellement de modèle
+    (sinon on paierait deux fois le même échec).
+    """
     if os.getenv("ANTHROPIC_API_KEY"):
-        try:
-            accroche, audit = _synthese_llm(company, scores, gaps, knowledge or {}, api_io=api_io)
+        config = greenit.charger_config()
+        modele_vu: set[str] = set()
+        for quality_check_echoue in (False, True):
+            contexte = _contexte_routage(scores, gaps, quality_check_echoue)
+            modele, profil = greenit.choisir_modele(contexte, config)
+            if modele in modele_vu:
+                break  # l'escalade ne change rien : inutile de rappeler
+            modele_vu.add(modele)
+            try:
+                accroche, audit = _synthese_llm(
+                    company, scores, gaps, knowledge or {}, api_io=api_io,
+                    config=config, modele=modele, profil=profil,
+                )
+            except Exception:  # noqa: BLE001 — en cas de souci, on ne bloque jamais
+                break
             ok, _ = quality_check(audit, gaps, company)
             if ok:
                 return accroche, audit
-        except Exception:  # noqa: BLE001 — en cas de souci, on ne bloque jamais
-            pass
     return _synthese_repli(company, scores, gaps)
+
+
+def _contexte_routage(
+    scores: dict[str, float], gaps: list[Gap], quality_check_echoue: bool
+) -> dict[str, Any]:
+    """Faits observables qui alimentent les règles de routage YAML.
+
+    Volontairement plat et sérialisable : les règles se lisent dans le YAML, pas
+    ici. Ajouter un critère de routage = ajouter une clé ici + une règle là-bas.
+    """
+    return {
+        "nb_failles": len(gaps),
+        "score_global": float(scores.get("global", 0) or 0),
+        "quality_check_echoue": quality_check_echoue,
+    }
 
 
 def quality_check(audit: str, gaps: list[Gap], company: Company) -> tuple[bool, list[str]]:
@@ -83,11 +121,27 @@ def _synthese_repli(company: Company, scores: dict[str, float], gaps: list[Gap])
 def _synthese_llm(
     company: Company, scores: dict[str, float], gaps: list[Gap], knowledge: dict[str, Any],
     api_io=None,
+    config: dict[str, Any] | None = None,
+    modele: str | None = None,
+    profil: str | None = None,
 ) -> tuple[str, str]:
-    """Rédaction par le LLM, strictement ancrée dans les failles fournies."""
+    """Rédaction par le LLM, strictement ancrée dans les failles fournies.
+
+    Le modèle et le budget de sortie viennent du routage GreenIT, jamais d'une
+    constante en dur : changer de modèle = éditer knowledge/greenit.yaml.
+    """
     import anthropic  # import paresseux : pas de dépendance dure
 
+    config = config if config is not None else greenit.charger_config()
+    if modele is None or profil is None:
+        modele, profil = greenit.choisir_modele(_contexte_routage(scores, gaps, False), config)
+    modele = modele or MODELE_REPLI  # dernier filet : jamais d'appel sans modèle défini
+    max_tokens = greenit.max_tokens_du_profil(profil, config)
+
+    # Frugalité #1 : borner l'ENTRÉE. Le bloc de failles est la seule partie du
+    # prompt dont la taille n'est pas maîtrisée (elle croît avec le prospect).
     faits = "\n".join(f"- [{g.gravite}] {g.dimension} : {g.preuve}" for g in gaps) or "- (aucune faille)"
+    faits = greenit.tronquer_contexte(faits, config)
     ton = knowledge.get("ton", "professionnel, direct, sans jargon")
     preuve = knowledge.get("preuve", "")
 
@@ -101,21 +155,29 @@ def _synthese_llm(
         "(2) un mini-audit en markdown (120 mots max), factuel, orienté action. "
         "Format : première ligne = ACCROCHE: ..., puis le markdown."
     )
+    # Plafond de dernier recours sur le prompt assemblé (ne se déclenche pas en
+    # régime normal : le bloc de failles est déjà borné au-dessus).
+    prompt = greenit.tronquer_contexte(prompt, config, cle="troncature_prompt_caracteres")
 
     client = anthropic.Anthropic()
     fn = lambda: client.messages.create(
-        model=MODELE, max_tokens=600, messages=[{"role": "user", "content": prompt}]
+        model=modele, max_tokens=max_tokens, messages=[{"role": "user", "content": prompt}]
     )
 
     if api_io is not None:
-        # Via bus : tokens comptabilisés dans api_usage.log
+        # Via bus : tokens, empreinte, modèle et profil comptabilisés dans api_usage.log
         def _mesure(r):
             u = r.usage
             return {
                 "input_tokens":  float(getattr(u, "input_tokens",  0) or 0),
                 "output_tokens": float(getattr(u, "output_tokens", 0) or 0),
             }
-        msg = api_io.call("anthropic", "messages", fn, fiche=company.nom, measure=_mesure)
+        msg = api_io.call(
+            "anthropic", "messages", fn,
+            fiche=company.nom, measure=_mesure,
+            region=company.region or None, modele=modele, profil=profil,
+            octets_sortants=len(prompt.encode("utf-8")),
+        )
     else:
         msg = fn()
 

@@ -17,9 +17,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import time
 from pathlib import Path
 from typing import Any, Callable
 
+from diagnostic import greenit
 from diagnostic.api_schema import LedgerEntry, compute_cout
 
 
@@ -58,6 +60,32 @@ MESUREURS_DEFAUT: dict[str, Callable[[Any], dict[str, float]]] = {
 }
 
 
+def estimer_octets(reponse: Any) -> int:
+    """Estime le volume reçu, en octets. Best effort, jamais bloquant.
+
+    Pourquoi « best effort » : selon le fournisseur la réponse est un dict JSON,
+    un objet `requests.Response` ou un objet SDK non sérialisable. On mesure ce
+    qu'on peut et on retourne 0 sinon — un volume inconnu vaut mieux qu'une
+    exception dans le bus.
+    """
+    try:
+        if isinstance(reponse, (bytes, bytearray)):
+            return len(reponse)
+        if isinstance(reponse, str):
+            return len(reponse.encode("utf-8"))
+        if isinstance(reponse, (dict, list, tuple)):
+            return len(json.dumps(reponse, ensure_ascii=False, default=str).encode("utf-8"))
+        texte = getattr(reponse, "text", None)
+        if isinstance(texte, str):
+            return len(texte.encode("utf-8"))
+        contenu = getattr(reponse, "content", None)
+        if isinstance(contenu, (bytes, bytearray)):
+            return len(contenu)
+    except Exception:  # noqa: BLE001 — la mesure ne doit jamais casser l'appel
+        return 0
+    return 0
+
+
 # ---------------------------------------------------------------------------
 # ApiIO — contrôleur de bus
 # ---------------------------------------------------------------------------
@@ -72,6 +100,7 @@ class ApiIO:
     cache_dir  : répertoire cache disque ; si None, cache désactivé
     budgets    : { "fournisseur": {"cout_max": X} | {"unites_max": {"unite": N}} }
     vault_path : si fourni, vérifie que cache_dir est hors du vault
+    greenit    : config d'efficience (knowledge/greenit.yaml) ; chargée par défaut
     """
 
     def __init__(
@@ -81,11 +110,15 @@ class ApiIO:
         cache_dir: Path | None = None,
         budgets: dict | None = None,
         vault_path: Path | None = None,
+        greenit_config: dict | None = None,
     ) -> None:
         self.pricing = pricing
         self._ledger = Path(ledger_path)
         self._budgets = budgets or {}
         self._cache_dir: Path | None = Path(cache_dir) if cache_dir else None
+        # Config GreenIT : facteurs d'empreinte + leviers de frugalité.
+        # charger_config() ne lève jamais → le bus démarre même sans le YAML.
+        self.greenit = greenit_config if greenit_config is not None else greenit.charger_config()
 
         # Guard : cache hors vault (même esprit que contrainte G9 de J2)
         if self._cache_dir is not None and vault_path is not None:
@@ -215,7 +248,25 @@ class ApiIO:
         cache_hit: bool,
         resultat: str,
         detail: str = "",
+        *,
+        octets_entrants: int = 0,
+        octets_sortants: int = 0,
+        duree_ms: float = 0.0,
+        region: str | None = None,
+        modele: str | None = None,
+        profil: str | None = None,
+        empreinte_nulle: bool = False,
     ) -> None:
+        # Empreinte : un cache-hit (ou un appel bloqué par le budget) ne consomme
+        # ni réseau ni GPU → exactement 0. C'est ce qui rend l'économie du cache
+        # et celle du garde-fou budgétaire mesurables dans le grand livre.
+        if cache_hit or empreinte_nulle:
+            energie_wh, co2e_g = 0.0, 0.0
+        else:
+            energie_wh, co2e_g = greenit.estimer_empreinte(
+                unites, octets_entrants + octets_sortants, region, self.greenit
+            )
+
         entry = LedgerEntry.maintenant(
             fournisseur=fournisseur,
             endpoint=endpoint,
@@ -226,6 +277,13 @@ class ApiIO:
             cache_hit=cache_hit,
             resultat=resultat,
             detail=detail,
+            octets_entrants=octets_entrants,
+            octets_sortants=octets_sortants,
+            duree_ms=round(float(duree_ms), 3),
+            energie_wh=energie_wh,
+            co2e_g=co2e_g,
+            modele=modele,
+            profil=profil,
         )
         self._ledger.parent.mkdir(parents=True, exist_ok=True)
         with self._ledger.open("a", encoding="utf-8") as f:
@@ -242,22 +300,38 @@ class ApiIO:
         fiche: str | None = None,
         cache_key: str | None = None,
         measure: Callable[[Any], dict[str, float]] | None = None,
+        region: str | None = None,
+        modele: str | None = None,
+        profil: str | None = None,
+        octets_sortants: int = 0,
     ) -> Any:
         """Médiatise un appel réseau externe.
 
-        1. Cache hit → retourne valeur cachée, journalise cache_hit=True, cout=0.
+        1. Cache hit → retourne valeur cachée, journalise cache_hit=True, cout=0,
+           énergie=0, CO2e=0 (aucun réseau, aucun GPU sollicité).
         2. Budget pre-check → BudgetExceeded si plafond atteint (fn jamais appelée).
-        3. Exécute fn().
-        4. Mesure les unités consommées (mesureur fourni ou défaut par fournisseur).
-        5. Calcule le coût depuis pricing, journalise une LedgerEntry.
+        3. Exécute fn(), chronométrée.
+        4. Mesure les unités consommées (mesureur fourni ou défaut par fournisseur)
+           et le volume reçu.
+        5. Calcule coût + empreinte estimée, journalise une LedgerEntry.
         6. Met en cache si cache_key fourni et réponse sérialisable.
         Retourne la réponse brute de fn().
+
+        Paramètres GreenIT (tous optionnels, sans effet sur le comportement réseau) :
+          region          : région du prospect → intensité carbone du mix électrique
+          modele / profil : décision de routage GreenIT, tracée dans le grand livre
+          octets_sortants : taille de la requête émise, quand l'appelant la connaît
         """
-        # 1. Cache hit
+        # 1. Cache hit — chronométré aussi : le coût évité doit rester comparable.
         if cache_key is not None:
+            t0 = time.perf_counter()
             cached = self._lire_cache(fournisseur, endpoint, cache_key)
             if cached is not None:
-                self._journaliser(fournisseur, endpoint, {}, 0.0, fiche, True, "ok")
+                self._journaliser(
+                    fournisseur, endpoint, {}, 0.0, fiche, True, "ok",
+                    duree_ms=(time.perf_counter() - t0) * 1000.0,
+                    region=region, modele=modele, profil=profil,
+                )
                 return cached
 
         # 2. Budget pre-check (estimé sur 1 unité avant d'appeler)
@@ -266,29 +340,44 @@ class ApiIO:
         try:
             self._verifier_budget(fournisseur, unites_pre, cout_pre)
         except BudgetExceeded as exc:
+            # Appel jamais émis → aucune empreinte à imputer.
             self._journaliser(
                 fournisseur, endpoint, unites_pre, cout_pre,
                 fiche, False, "budget_depasse", str(exc),
+                region=region, modele=modele, profil=profil,
+                empreinte_nulle=True,
             )
             raise
 
-        # 3. Exécuter fn()
+        # 3. Exécuter fn() — chronométrage réel autour du seul appel réseau
+        t0 = time.perf_counter()
         try:
             reponse = fn()
         except Exception as exc:
-            self._journaliser(fournisseur, endpoint, {}, 0.0, fiche, False, "erreur", str(exc))
+            self._journaliser(
+                fournisseur, endpoint, {}, 0.0, fiche, False, "erreur", str(exc),
+                duree_ms=(time.perf_counter() - t0) * 1000.0,
+                octets_sortants=octets_sortants,
+                region=region, modele=modele, profil=profil,
+            )
             raise
+        duree_ms = (time.perf_counter() - t0) * 1000.0
 
-        # 4. Mesure réelle des unités
+        # 4. Mesure réelle des unités + du volume reçu
         mesureur = measure or MESUREURS_DEFAUT.get(fournisseur, lambda r: {"requetes": 1.0})
         try:
             unites = mesureur(reponse)
         except Exception:
             unites = {"requetes": 1.0}
         cout = compute_cout(self.pricing, fournisseur, endpoint, unites)
+        octets_entrants = estimer_octets(reponse)
 
-        # 5. Journaliser
-        self._journaliser(fournisseur, endpoint, unites, cout, fiche, False, "ok")
+        # 5. Journaliser (coût + empreinte estimée)
+        self._journaliser(
+            fournisseur, endpoint, unites, cout, fiche, False, "ok",
+            octets_entrants=octets_entrants, octets_sortants=octets_sortants,
+            duree_ms=duree_ms, region=region, modele=modele, profil=profil,
+        )
 
         # 6. Mettre à jour les registres en mémoire
         self._mettre_a_jour_registres(fournisseur, unites, cout)
