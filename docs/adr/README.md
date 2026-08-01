@@ -9,7 +9,7 @@ mois faute de mémoire.
 | N° | Titre | Statut | Date |
 |---|---|---|---|
 | [0001](0001-orchestrateur-dag-deterministe.md) | Orchestrateur DAG déterministe « Kemana-Flow » | acceptée — Palier 1 implémenté | 2026-08-01 |
-| [0002](0002-greenit-efficience-et-observabilite.md) | GreenIT : efficience des appels IA et observabilité de l'empreinte | **en cours d'implémentation** | 2026-08-01 |
+| [0002](0002-greenit-efficience-et-observabilite.md) | GreenIT : efficience des appels IA et observabilité de l'empreinte | acceptée — implémentée | 2026-08-01 |
 
 ## Quand écrire une ADR
 

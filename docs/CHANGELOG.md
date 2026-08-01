@@ -12,42 +12,133 @@ de l'indicatif. Chaque entrée cite son commit ou son fichier.
 
 ---
 
-## [Non publié] — Itération 2 `[EN COURS]`
+## [Itération 2] — 2026-08-01 — GreenIT, intégration e2e, cockpit connecté
 
-> Trois chantiers étaient actifs en parallèle au moment de la rédaction de cette
-> section. **Elle sera complétée en seconde passe**, une fois leur contenu
-> réellement vérifiable. Rien ci-dessous ne doit être considéré comme livré.
+Quatre chantiers menés en parallèle, tous commités et audités.
+Revue : **29 assertions ré-exécutées** — GREENIT 100 %, INTÉGRATION 100 %,
+WEBAPP 100 % → CLEARED ; **DOCUMENTATION 5/6 = 83,3 % → RELANCE** (assertion D4 :
+chiffres périmés dans `CLAUDE.md`/`README.md`, corrigés depuis).
+Ancrage de la revue : `04059f6`. Correctifs post-revue : `611eb74`.
+
+**Comptes vérifiés par exécution** (le 2026-08-01, commit de tête `611eb74`) :
+`tests/` **527** (dont **46** e2e et **78** GreenIT) · backend **45** ·
+frontend **34**.
+
+**Commits de l'itération :** `6055e14` (GreenIT) · `d5b14d1` (cockpit connecté) ·
+`0234af3` (intégration e2e) · `4585a10` (agents + documentation) ·
+`04059f6` (ancrage revue) · `611eb74` (correctifs post-revue).
 
 ### Ajouté
 
-- **Écosystème d'agents persistant** — `.claude/agents/` : sept sous-agents
-  Claude Code réutilisables d'une session à l'autre, chacun portant les
-  invariants d'architecture du projet dans son prompt système
+- **GreenIT — efficience des appels IA et empreinte tracée** (`6055e14`) —
+  décision : `docs/adr/0002-greenit-efficience-et-observabilite.md`.
+  - `diagnostic/greenit.py` — `charger_config`, `evaluer_escalade`,
+    `choisir_modele`, `max_tokens_du_profil`, `tronquer_contexte`,
+    `intensite_carbone`, `estimer_empreinte`.
+  - `knowledge/greenit.yaml` — **la stratégie d'efficience est une donnée** :
+    3 profils (`frugal` haiku/400, `standard` haiku/600, `qualite` sonnet/900),
+    routage `standard` par défaut avec escalade en mode `ou` sur
+    `quality_check_echoue == true`, `nb_failles >= 6`, `score_global >= 75` ;
+    bornes de frugalité (contexte 4 000 car., prompt 8 000 car.,
+    `max_tokens_sortie` 600, TTL cache 30 j, prompt caching désactivé) ;
+    facteurs d'empreinte avec intensité carbone **par région**.
+  - **Routage déterministe** — mêmes entrées, même profil. **Aucun LLM ne décide
+    du routage** : le superviseur-planificateur LLM reste refusé (ADR 0001).
+  - **7 champs ajoutés à `LedgerEntry`** : `octets_entrants`, `octets_sortants`,
+    `duree_ms`, `energie_wh`, `co2e_g`, `modele`, `profil` — tous optionnels avec
+    défaut, donc **les lignes antérieures se relisent sans migration**.
+  - `diagnostic/synthesis.py` consomme le routage ; **le modèle n'est plus en
+    dur**. Le repli déterministe sans clé est préservé.
+  - `tests/test_greenit.py` — **78 tests** (le message de commit annonçait 77 ;
+    écart relevé par la revue).
+- **Tests d'intégration end-to-end réels** (`0234af3`) — `tests/integration/` :
+  **46 tests** exécutés contre un **faux serveur HTTP local**
+  (`faux_api.py`), **sans aucune clé API**. Cinq flux :
+  `test_e2e_bus.py` (cache, budgets, garde-fous vault),
+  `test_e2e_decouverte.py`, `test_e2e_diagnostic.py`, `test_e2e_export.py`,
+  `test_e2e_orchestrateur.py`.
+  Les invariants ne sont plus seulement prouvés par mock mais **par le réseau** :
+  deux appels identiques ne produisent **qu'une seule** requête ; le budget
+  interrompt **avant** l'appel ; la machine à états est inviolable ; le cache et
+  les exports refusent de s'installer dans le vault.
+- **Observabilité GreenIT temps réel dans le cockpit** (`d5b14d1`) —
+  `webapp/backend/greenit.py` (lecture/agrégation du grand livre + tail par
+  offset), routes **`/api/greenit`** et **`/api/greenit/stream`** (SSE), écran
+  **`/greenit`** côté front. Le cockpit passe de **8 à 10 routes** et de
+  **5 à 6 écrans**. Connexion réelle back ↔ front.
+  **Lecture seule stricte préservée.**
+- **Écosystème d'agents persistant + documentation technique** (`4585a10`) —
+  `.claude/agents/` : sept sous-agents Claude Code réutilisables d'une session à
+  l'autre, chacun portant les invariants d'architecture dans son prompt système
   (`agent-documentation`, `agent-revue`, `agent-architecte`, `agent-dev-python`,
   `agent-frontend`, `agent-greenit`, `agent-produit`).
-  Cartographie : `docs/agents/ECOSYSTEME.md`.
-- **Documentation d'architecture** — `docs/architecture/` :
-  `README.md` (vue d'ensemble + diagrammes Mermaid), `invariants.md`
-  (19 invariants avec leur preuve exécutable), `flux-donnees.md` (chaîne de bout
-  en bout).
-- **Registre de décisions** — `docs/adr/` :
-  ADR 0001 (orchestrateur DAG déterministe, décision du Palier 1),
-  ADR 0002 (GreenIT, **en cours d'implémentation**), index et format.
-- **Ce changelog** — `docs/CHANGELOG.md`.
-- **`knowledge/greenit.yaml`** `[EN COURS]` — stratégie d'efficience en donnée :
-  profils de modèle, règles de routage déterministes, bornes de frugalité,
-  facteurs d'estimation d'empreinte régionalisés. Présent dans l'arbre de
-  travail, non commité à la date de rédaction. Le module Python associé n'était
-  pas encore présent.
+  `docs/architecture/` (vue d'ensemble + Mermaid, **21 invariants** avec leur
+  preuve exécutable, flux de bout en bout), `docs/adr/` (ADR 0001 et 0002),
+  `docs/agents/ECOSYSTEME.md`, `docs/CHANGELOG.md`.
 
-### À compléter en seconde passe
+### Modifié
 
-| Chantier | Périmètre annoncé | Ce qu'il faudra vérifier |
-|---|---|---|
-| **GreenIT** | `knowledge/greenit.yaml`, module(s) d'efficience (emplacement à confirmer), effets sur `api_io.py` / `api_schema.py` / `synthesis.py` | emplacement et API réels des modules, valeurs finales du YAML, champs ajoutés au grand livre, colonnes du rapport d'usage, tests de déterminisme du routage, étiquetage « estimation » effectif |
-| **Intégration e2e** | `tests/integration/**`, `scripts/**` | scénarios couverts, compte de tests, intégration au protocole de revue |
-| **Collecteurs / découverte** | `diagnostic/discovery.py`, `diagnostic/enrichment.py`, `diagnostic/collectors/*` | tableau des collecteurs et de leurs paliers dans `flux-donnees.md` §4 |
-| **Cockpit** | `webapp/**` (backend, frontend, écran GreenIT) | écrans, routes et contrat d'API dans `docs/architecture/README.md` §5 ; **vérifier que la lecture seule stricte (I14) est préservée** |
+- `CLAUDE.md`, `README.md` — orchestrateur DAG, cockpit, écosystème d'agents,
+  gouvernance 97 %, section GreenIT, état réel du système, comptes de tests.
+- `docs/architecture/invariants.md` — deux invariants ajoutés : **I20** (routage
+  déterministe piloté par la donnée) et **I21** (bornes de frugalité appliquées
+  avant émission). Colonnes « comment c'est testé » de I5, I6, I7 et I15
+  enrichies des preuves e2e.
+
+### Corrigé
+
+- **Chiffres périmés dans la documentation** (assertion D4 de la revue) :
+  routes cockpit 8 → **10**, écrans 5 → **6**, tests backend 18 → **45**,
+  suite 403 → **527**. Cause : documentation d'un instantané pris **avant**
+  l'atterrissage du chantier WEBAPP de la même itération.
+  Règle qui en découle, inscrite dans le prompt de `agent-documentation` :
+  **re-vérifier chaque chiffre par une commande juste avant de rendre**, jamais
+  au moment où on le relève.
+- **`tests/test_greenit.py` : 77 → 78** — le compte annoncé par le message de
+  commit ne correspondait pas au compte réel.
+- **Justification erronée du parsing défensif du cockpit** (`611eb74`).
+  L'argument avancé par `d5b14d1` — « `extra="forbid"` rejetterait les lignes
+  enrichies » — est **faux** : `LedgerEntry` relit parfaitement les lignes
+  enrichies depuis `6055e14` (vérifié par exécution). Le bon argument est la
+  **tolérance au schéma futur et aux lignes corrompues** : `LedgerEntry` est un
+  schéma d'*écriture*, strict par construction, tandis qu'une vue de
+  *consultation* ne doit jamais tomber sur ce qu'elle lit (champ futur, `ts`
+  malformé, `unites: null`, ligne lue à chaud pendant une écriture).
+  Docstring du module et ADR 0002 corrigés.
+
+### Sécurité / fiabilité
+
+- **Test de non-régression croisé socle ⇄ cockpit** (`611eb74`) —
+  `webapp/backend/tests/test_greenit_usage_convergence.py`, **7 tests** :
+  coût total, comptages, par fournisseur, filtre `depuis`, ledger vide,
+  endpoints HTTP (avec et sans filtre). Il compare `diagnostic/usage.py::agreger`
+  et `webapp/backend/greenit.py::agreger` sur un ledger panaché et **échoue si
+  elles divergent**. Le backend passe de 38 à **45 tests**.
+  Ce test a été créé après que la passe documentaire a signalé que le docstring
+  l'annonçait sans qu'il existe — un filet de sécurité documenté mais absent est
+  plus dangereux qu'un manque assumé.
+
+### Dette technique inscrite (non bloquante)
+
+1. ~~**Duplication de la logique de coût** sans test de convergence.~~
+   **Fermée par `611eb74`** (voir ci-dessus). Il subsiste une duplication de
+   *code* — refactor souhaitable à terme (une seule fonction de calcul, deux
+   vues), mais **plus de risque de divergence silencieuse**.
+2. **`diagnostic/greenit.py` absent de la liste `_check_garde_fous_bus`** alors
+   que l'invariant I4 l'impose. **Toujours ouvert** — vérifié :
+   `sed -n '/modules_j5 = \[/,/\]/p' diagnostic/preflight.py | grep -c greenit`
+   → `0`. L'invariant tient *de fait* via le test générique en `rglob` sur
+   `diagnostic/**`, mais pas par le mécanisme annoncé, et le préflight ne le
+   signale pas. → L'ajouter à `diagnostic/preflight.py`.
+
+### Ce qui reste NON mesurable
+
+Le mécanisme GreenIT est livré ; **l'économie ne l'est pas**. `api_pricing.yaml`
+est toujours à `0.0` (tous les coûts valent 0,00), les facteurs d'empreinte n'ont
+jamais été étalonnés (`releve_le: null`), et aucun run réel n'a eu lieu.
+**Aucun pourcentage de gain n'est calculable** — l'avancer serait une invention.
+Le préflight reste en **NO-GO structurel**, le vault reste non initialisé, et
+**J6 reste non activable**.
 
 ---
 

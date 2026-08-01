@@ -113,11 +113,14 @@ réellement bloquants. Un seul appel direct hors bus, et le grand livre ment.
 - Les collecteurs qui ont besoin de `requests` l'importent **à l'intérieur des
   fonctions** (import paresseux), jamais au niveau module.
 - Un garde-fou AST (`diagnostic/preflight.py::_check_garde_fous_bus`) parcourt
-  une liste de modules surveillés et refuse tout import de niveau module de
-  `requests` ou `anthropic`. Cette liste couvre aujourd'hui `export.py`,
-  `usage.py`, `preflight.py`, `run_export.py`, `run_usage.py`,
-  `run_preflight.py`, **et depuis l'itération 1** `orchestrator.py` et
-  `run_pipeline.py`. **Tout nouveau module de ce type doit y être ajouté.**
+  une liste **nominative** de modules surveillés et refuse tout import de niveau
+  module de `requests` ou `anthropic`. Elle couvre `export.py`, `usage.py`,
+  `preflight.py`, `run_export.py`, `run_usage.py`, `run_preflight.py`, **et
+  depuis l'itération 1** `orchestrator.py` et `run_pipeline.py`.
+- **Second filet, générique** : `tests/test_api_io.py` parcourt **tout
+  `diagnostic/**` en `rglob`** et applique la même règle à chaque fichier sauf
+  `api_io.py`. C'est ce filet qui rattrape les modules absents de la liste
+  nominative.
 
 **Comment c'est testé.**
 ```bash
@@ -127,6 +130,17 @@ python -m pytest tests/test_preflight.py -q   # contrôles du garde-fou AST
 python -c "from diagnostic.preflight import _check_garde_fous_bus; \
 [print(c.ok, c.message) for c in _check_garde_fous_bus()]"
 ```
+
+> **Dette constatée (2026-08-01, non bloquante).**
+> `diagnostic/greenit.py` — module introduit à l'itération 2 et susceptible
+> d'importer `anthropic` — **n'est pas** dans la liste nominative de
+> `_check_garde_fous_bus`, alors que la règle ci-dessus impose de l'y ajouter.
+> **L'invariant tient malgré tout** : il est couvert *de fait* par le test
+> générique en `rglob` sur `diagnostic/**`. Mais il tient par le filet de
+> sécurité, pas par le mécanisme annoncé — et le préflight, lui, ne le signale
+> pas. → Ajouter le module à la liste (correctif côté code, hors périmètre de
+> la passe documentaire).
+> Contrôle : `sed -n '/modules_j5 = \[/,/\]/p' diagnostic/preflight.py | grep -c greenit` → `0`.
 
 ---
 
@@ -145,10 +159,35 @@ l'instanciation. Les entrées en cache hit et les interruptions
 `budget_depasse` sont exclues des totaux (elles n'ont rien consommé).
 Le fichier est ouvert en mode `a` : append-only, gitignoré.
 
+**Extension GreenIT (itération 2).** Sept champs optionnels ont été ajoutés à
+`LedgerEntry` : `octets_entrants`, `octets_sortants`, `duree_ms`, `energie_wh`,
+`co2e_g`, `modele`, `profil`. Tous ont une valeur par défaut, donc **les lignes
+antérieures se relisent sans migration** — `extra="forbid"` interdit les champs
+*inconnus*, pas les champs *manquants*.
+
 **Comment c'est testé.**
 ```bash
 python -m pytest tests/test_api_io.py tests/test_api_schema.py tests/test_usage.py -q
+python -m pytest tests/test_greenit.py -q -k "RetroCompatLedger or LedgerGreenIT"
+python -m pytest tests/integration/test_e2e_bus.py -q -k "grand_livre"
 ```
+`test_e2e_bus.py::test_grand_livre_est_du_jsonl_append_only` vérifie la
+propriété sur un **vrai flux d'appels** contre un serveur HTTP local.
+
+**Deux implémentations, une convergence garantie.** Le coût est calculé à deux
+endroits depuis le **même** grand livre : `diagnostic/usage.py::agreger` (typée,
+via `LedgerEntry`) et `webapp/backend/greenit.py::agreger` (JSONL brut, parsing
+défensif — justifié pour une vue de consultation, cf. ADR 0002). Deux sources de
+vérité pour un chiffre financier seraient une dette dangereuse ; elle est
+**tenue par un test de non-régression croisé** (`611eb74`) :
+
+```bash
+python -m pytest webapp/backend/tests/test_greenit_usage_convergence.py -q   # 7 tests
+```
+Il compare les deux agrégations sur un ledger panaché — coût total, comptages,
+par fournisseur, filtre `depuis`, ledger vide, endpoints HTTP — et **échoue si
+elles divergent**. Reste une duplication de *code* (refactor souhaitable à
+terme), mais plus de risque de divergence *silencieuse*.
 
 ---
 
@@ -174,7 +213,14 @@ grossier, pas du token près.
 ```bash
 python -m pytest tests/test_api_io.py -q
 python -m pytest tests/test_orchestrator.py -q      # test_budget_exceeded_arret_propre
+python -m pytest tests/integration/test_e2e_bus.py -q -k "budget"
 ```
+Depuis l'itération 2, l'invariant est prouvé **par le réseau réel** (faux serveur
+HTTP local, aucune clé) et non plus seulement par mock :
+`test_budget_interrompt_avant_lappel_reseau` constate qu'**aucune requête
+n'atteint le serveur** une fois le plafond atteint ;
+`test_budget_apollo_epuise_ne_corrompt_pas_le_vault` et
+`test_reprise_apres_budget_est_idempotente` couvrent l'arrêt propre et la reprise.
 
 ---
 
@@ -202,9 +248,15 @@ python -m pytest tests/test_vault_schema.py -q      # test_transitions_agent_sou
 python -m pytest tests/test_vault_io.py -q          # test_transition_agent_reservee_a_humain
 python -m pytest tests/test_orchestrator.py -q      # test_transition_agent_vers_valide_interdite
                                                     # test_chaine_complete_ne_valide_aucune_fiche
+python -m pytest tests/integration/test_e2e_bus.py -q -k "GardeFousVault"
 ```
-Ce dernier test est le plus important du lot : il vérifie qu'une **exécution
-complète** de la chaîne ne fait passer aucune fiche en `valide`.
+`test_chaine_complete_ne_valide_aucune_fiche` est le plus important du lot : il
+vérifie qu'une **exécution complète** de la chaîne ne fait passer aucune fiche
+en `valide`. Depuis l'itération 2, `tests/integration/test_e2e_bus.py` le double
+sur un flux réel : `test_agent_ne_peut_pas_valider_une_fiche` et
+`test_transitions_illegales_refusees` (paramétré sur les couples départ/cible
+interdits) rendent la machine à états **inviolable de bout en bout**, et
+`test_journal_vault_append_only` confirme que la trace suit.
 
 ---
 
@@ -396,7 +448,11 @@ l'historique.
 **Comment c'est testé.**
 ```bash
 python -m pytest tests/test_vault_io.py tests/test_api_io.py tests/test_export.py tests/test_preflight.py -q
+python -m pytest tests/integration/test_e2e_bus.py -q -k "cache_refuse"
+python -m pytest tests/integration/test_e2e_export.py -q -k "refuse_decrire"
 ```
+Doublé à l'itération 2 par `test_cache_refuse_de_sinstaller_dans_le_vault` et
+`test_refuse_decrire_dans_le_vault` sur un flux réel.
 
 ---
 
@@ -493,6 +549,52 @@ et sur les prix à zéro. Un chiffrage opposable exigerait une ACV par un tiers.
 ```bash
 python -m pytest tests/test_j5_phase0.py tests/test_preflight.py -q
 python run_preflight.py; echo "code de sortie : $?"   # 1 = NO-GO attendu aujourd'hui
+```
+
+---
+
+## I20 — Le routage de modèle est déterministe et piloté par la donnée
+
+**Invariant.** Le choix du modèle LLM résulte de règles **explicites** évaluées
+sur un contexte. Mêmes entrées → même profil. **Aucun LLM ne décide du routage**,
+et aucun nom de modèle n'est codé en dur.
+
+**Pourquoi.** Le superviseur-planificateur LLM a été explicitement refusé par
+l'ADR 0001 (coût, non-déterminisme, charge cognitive). Faire décider un modèle
+par un modèle le réintroduirait par la porte de service. Par ailleurs, un
+routage déterministe est reproductible, donc auditable, donc testable.
+
+**Comment c'est tenu.** `diagnostic/greenit.py::choisir_modele(contexte, config)`
+évalue les règles de `knowledge/greenit.yaml` (opérateurs de comparaison simples,
+combinaison `ou`/`et`). Profil par défaut `standard`, escalade `qualite`.
+`synthesis.py` consomme le résultat ; le modèle n'apparaît nulle part en dur.
+
+**Comment c'est testé.**
+```bash
+python -m pytest tests/test_greenit.py -q -k "ChoisirModele or MaxTokens"
+grep -n "greenit\|choisir_modele" diagnostic/synthesis.py
+```
+
+---
+
+## I21 — Frugalité : les bornes s'appliquent avant l'émission
+
+**Invariant.** Le contexte et le prompt assemblé sont tronqués, et `max_tokens`
+est plafonné, **avant** tout appel réseau.
+
+**Pourquoi.** Le prompt croît avec le nombre de failles : sans borne, une fiche
+pathologique multiplie le coût. Un plafond appliqué après coup ne plafonne rien.
+Effet de bord vertueux : borner l'entrée réduit la surface d'injection de prompt
+via du contenu scrapé.
+
+**Comment c'est tenu.** `tronquer_contexte()` est appelé deux fois dans
+`synthesis.py` — sur les faits, puis sur le prompt complet (garde-fou de dernier
+recours). `max_tokens_du_profil()` applique `frugalite.max_tokens_sortie` s'il
+est plus restrictif que le profil.
+
+**Comment c'est testé.**
+```bash
+python -m pytest tests/test_greenit.py -q -k "TronquerContexte or MaxTokens"
 ```
 
 ---

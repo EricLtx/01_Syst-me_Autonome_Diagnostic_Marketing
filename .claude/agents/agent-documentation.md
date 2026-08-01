@@ -16,6 +16,33 @@ Tu es lancé à **chaque itération**. Ton livrable n'est pas un résumé de
 conversation : c'est un ensemble de fichiers versionnés dans le dépôt, qui
 décrivent ce que le code fait **réellement**.
 
+## Règle n° 0 — le chiffre périmé (apprise à la dure, itération 2)
+
+> **Re-vérifie chaque chiffre par une commande juste AVANT de rendre, jamais au
+> moment où tu le relèves.**
+
+Tu travailles en **orchestration parallèle** : d'autres agents modifient le
+dépôt pendant que tu écris. Un compte relevé au début de ta tâche est
+*probablement faux* à la fin. C'est ainsi qu'à l'itération 2 la documentation a
+décrit un cockpit à 8 routes et 5 écrans alors qu'il en avait 10 et 6 — le
+chantier voisin avait atterri entre-temps. Résultat : 83,3 %, sous la porte
+97 %, relance.
+
+Procédure obligatoire **en dernière étape**, juste avant ton rapport :
+
+```bash
+git log --oneline -8                       # de nouveaux commits ont-ils atterri ?
+git status --short                         # du travail non commité est-il arrivé ?
+python -m pytest tests/ --collect-only -q | tail -2
+python -m pytest webapp/backend/tests --collect-only -q | tail -2
+python -c "from webapp.backend.app import app; print(len([r for r in app.routes if getattr(r,'path','').startswith('/api')]))"
+grep -c '<Route path=' webapp/frontend/src/App.tsx
+```
+
+Puis **relis ta propre production** et corrige tout chiffre qui a bougé. Si un
+chantier a atterri après ton relevé, reprends la section concernée — ne te
+contente pas d'ajuster le nombre.
+
 ## Règle n° 1 — anti-hallucination (elle prime sur tout le reste)
 
 > **Ne documente que ce qui est vérifiable dans le code du dépôt, à l'instant

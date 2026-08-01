@@ -6,7 +6,9 @@
 > d'une seconde passe documentaire.
 >
 > Dernière vérification : **2026-08-01**, branche
-> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `2ed8d93`.
+> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `4585a10`
+> (itération 2 : GreenIT `6055e14`, cockpit `d5b14d1`, intégration `0234af3`).
+> Comptes vérifiés par exécution : `tests/` **527** · backend **45** · front **34**.
 
 ## Table des documents
 
@@ -231,8 +233,9 @@ Complément web d'Obsidian, **strictement en lecture seule**.
 
 ### Backend — `webapp/backend/` (FastAPI)
 
-Huit routes, toutes en `GET`, CORS limité aux origines de développement Vite,
-méthodes autorisées réduites à `GET` :
+**Dix routes**, toutes en `GET`, CORS limité aux origines de développement Vite,
+méthodes autorisées réduites à `GET`
+(contrôle : `python -c "from webapp.backend.app import app; print(len([r for r in app.routes if getattr(r,'path','').startswith('/api')]))"` → `10`) :
 
 | Route | Rôle |
 |---|---|
@@ -242,24 +245,28 @@ méthodes autorisées réduites à `GET` :
 | `GET /api/prospects` | liste filtrable (`statut`, `persona`, `marche`) |
 | `GET /api/prospects/{slug}` | fiche + rapport de diagnostic |
 | `GET /api/usage` | agrégat du grand livre (`depuis` optionnel) |
+| `GET /api/greenit` | agrégats d'efficience — coût, appels, cache, énergie et CO₂e **estimés** |
+| `GET /api/greenit/stream` | flux SSE — observabilité temps réel (tail du grand livre par offset) |
 | `GET /api/icp` | ICP disponibles |
 | `GET /api/runs` | dernières lignes de `runs.log` |
 
 Les routes restent minces ; l'accès au package `diagnostic` est concentré dans
-`webapp/backend/services.py`. Le backend n'écrit rien, ne fait aucune
-transition, n'appelle jamais `api_io`, et ne dépend ni de `requests` ni de
-`anthropic`.
+`webapp/backend/services.py`, et la lecture/agrégation du grand livre pour
+GreenIT dans `webapp/backend/greenit.py`. Le backend n'écrit rien, ne fait
+aucune transition, n'appelle jamais `api_io`, et ne dépend ni de `requests` ni
+de `anthropic`.
 
 Configuration par variables d'environnement : `VAULT_PATH`, `API_USAGE_LOG`,
 `RUNS_LOG`, `PREFLIGHT_ROOT_DIR`.
 
 ### Frontend — `webapp/frontend/` (React 18 + Vite + TypeScript)
 
-Cinq écrans : Dashboard (`/`), Prospects (`/prospects`), Détail
-(`/prospects/:slug`), Usage (`/usage`), Préflight (`/preflight`).
+**Six écrans** : Dashboard (`/`), Prospects (`/prospects`), Détail
+(`/prospects/:slug`), Usage (`/usage`), **GreenIT (`/greenit`)**,
+Préflight (`/preflight`).
 Thème clair **et** sombre piloté par `src/theme.css`. Mode mock hors ligne via
 `src/mocks/fixtures.ts` : l'application se démontre sans backend. Tests Vitest +
-Testing Library sous `src/__tests__/`.
+Testing Library sous `src/__tests__/` (**34 tests**).
 
 Aucune dépendance de graphiques ni d'UI kit : `FunnelBars`, `StatTile`,
 `StatusPill`, `VerdictBanner` sont écrits à la main. Frugalité assumée.
@@ -284,38 +291,72 @@ l'opératrice : variables d'environnement + YAML), pas du développement.
 
 ---
 
-## 7. Chantiers en cours `[EN COURS]`
+## 7. GreenIT — efficience et observabilité (itération 2, livré)
 
-Ces travaux sont menés en parallèle au moment de la rédaction. **Cette section
-sera complétée en seconde passe**, une fois leur contenu réellement vérifiable
-dans le dépôt. Rien de ce qui suit ne doit être considéré comme livré.
+Décision : `docs/adr/0002-greenit-efficience-et-observabilite.md` (acceptée,
+implémentée — commits `6055e14` et `d5b14d1`).
 
-| Chantier | Périmètre annoncé | Ancre de documentation |
-|---|---|---|
-| **GreenIT** | `knowledge/greenit.yaml`, module(s) d'efficience (emplacement à confirmer : socle et/ou cockpit), effets sur `api_io.py` / `api_schema.py` / `synthesis.py` | ADR `docs/adr/0002-greenit-efficience-et-observabilite.md` — chiffres et arborescence à compléter |
-| **Intégration e2e** | `tests/integration/**`, `scripts/**` | colonne « Comment c'est testé » de `invariants.md` — à compléter |
-| **Collecteurs / découverte** | `diagnostic/discovery.py`, `diagnostic/enrichment.py`, `diagnostic/collectors/*` | tableau des collecteurs de `flux-donnees.md` §4 — à réviser |
-| **Cockpit** | `webapp/**` (backend, frontend, écran GreenIT) | section 5 de ce document — à réviser |
+`diagnostic/greenit.py` + `knowledge/greenit.yaml` posent trois leviers, tous
+pilotés par la **donnée** :
 
-`knowledge/greenit.yaml` **existe déjà** dans l'arbre de travail (non commité au
-moment de la rédaction) et pose trois leviers — routage déterministe, frugalité,
-observabilité — ainsi qu'un avertissement méthodologique explicite sur le statut
-d'**estimation** des facteurs d'empreinte.
+| Levier | Mécanisme |
+|---|---|
+| **Routage** | `choisir_modele(contexte, config)` — règles de comparaison explicites. Défaut `standard` (haiku, 600) ; escalade `qualite` (sonnet, 900) en mode `ou` sur `quality_check_echoue == true`, `nb_failles >= 6`, `score_global >= 75`. **Aucun LLM ne décide du routage** (invariant I20) |
+| **Frugalité** | troncature du contexte (4 000 car.) et du prompt assemblé (8 000 car.), `max_tokens_sortie` 600 qui écrase le profil, TTL de cache 30 j, prompt caching désactivé (non rentable : un prompt par prospect) — invariant I21 |
+| **Observabilité** | 7 champs sur `LedgerEntry` (`octets_entrants`, `octets_sortants`, `duree_ms`, `energie_wh`, `co2e_g`, `modele`, `profil`), tous optionnels → **les anciennes lignes se relisent sans migration**. Intensité carbone **par région** |
 
-> **Point de vigilance pour la seconde passe** : des artefacts GreenIT sont
-> apparus côté cockpit pendant la rédaction. Il faudra vérifier que le cockpit
-> reste **strictement en lecture seule** (invariant I14) et qu'il ne recalcule
-> rien que le grand livre ne contienne déjà — sans quoi deux sources de vérité
-> coexisteraient sur les coûts.
+Restitution : rapport `run_usage.py`, route `/api/greenit`, flux SSE
+`/api/greenit/stream`, écran `/greenit`.
+
+> ⚠️ **`energie_wh` et `co2e_g` sont des ESTIMATIONS**, jamais des mesures
+> certifiées (invariant I19). Facteurs = ordres de grandeur paramétrables,
+> `releve_le: null`. Usage **comparatif** uniquement.
+> **Aucun pourcentage d'économie n'est calculable** tant que
+> `api_pricing.yaml` est à `0` : tous les coûts valent 0,00.
+
+### Dette technique (constatée, non bloquante)
+
+1. **Duplication du calcul de coût** entre `diagnostic/usage.py::agreger` et
+   `webapp/backend/greenit.py::agreger`. Ils convergent au centime aujourd'hui
+   (vérifié par la revue) mais **aucun test ne le garantit**. Le docstring du
+   module cockpit annonce un test croisé `test_greenit_usage_convergence.py`
+   qui **n'existe pas dans le dépôt**.
+2. **`diagnostic/greenit.py` absent de la liste `_check_garde_fous_bus`** —
+   couvert *de fait* par le test générique en `rglob`, mais pas par le mécanisme
+   annoncé (voir I4).
+
+Le parsing défensif du cockpit (lecture du JSONL brut plutôt que via
+`LedgerEntry`) est en revanche **justifié** : un schéma d'écriture est strict par
+construction, une vue de consultation doit tolérer un champ futur ou une ligne
+corrompue lue à chaud. **Lecture seule stricte préservée** (invariant I14).
 
 ---
 
-## 8. Trajectoire
+## 8. Tests d'intégration end-to-end (itération 2, livré)
+
+`tests/integration/` — **46 tests** exécutés contre un **faux serveur HTTP
+local** (`faux_api.py`), **sans aucune clé API** (commit `0234af3`).
+
+| Fichier | Ce qu'il prouve |
+|---|---|
+| `test_e2e_bus.py` | cache (deux appels identiques → **une seule** requête réseau), budget interrompu **avant** l'appel, cache refusé dans le vault, machine à états inviolable, journaux append-only |
+| `test_e2e_decouverte.py` | SERP → fiches `decouvert`, filtres ICP, dédup, enrichissement Apollo, minimisation RGPD, dry-run |
+| `test_e2e_diagnostic.py` | collecte réelle, partage de cache Places, transition `decouvert → diagnostique`, repli déterministe **sans appel** quand la clé manque, idempotence |
+| `test_e2e_export.py` | opt-out absolu, lecture seule, refus d'écrire dans le vault, colonnes Kemana, anomalies |
+| `test_e2e_orchestrateur.py` | GO/NO-GO, chaîne cohérente, idempotence, dry-run, verrou anti-concurrence |
+
+**L'apport décisif** : les invariants ne sont plus seulement prouvés par mock
+mais **par le réseau**. Voir les colonnes « Comment c'est testé » de
+`invariants.md` (I5, I6, I7, I15).
+
+---
+
+## 9. Trajectoire
 
 | Palier | Contenu | Statut |
 |---|---|---|
 | **1** | Orchestrateur DAG déterministe, CLI unique, graphe en donnée, `ApiIO` unique injectée, cockpit lecture seule | **livré** (itération 1) |
-| **2** | Critique de grounding déterministe · conformité-par-donnée (`compliance/*.yaml` par marché) · routage de modèle piloté par YAML | cible — le routage de modèle est amorcé par le chantier GreenIT `[EN COURS]` |
+| **2** | Critique de grounding déterministe · conformité-par-donnée (`compliance/*.yaml` par marché) · routage de modèle piloté par YAML | **partiellement livré** — le routage de modèle YAML est fait (ADR 0002, itération 2). Restent la critique de grounding et la conformité-par-donnée |
 | **3** | Fragments multi-tenant (gateway métrée par tenant, isolation, coût par tenant) | **gelé** jusqu'à un seuil de tenants payants défini à l'avance |
 
 Refus explicites et durables : le **superviseur-planificateur LLM** (coût,

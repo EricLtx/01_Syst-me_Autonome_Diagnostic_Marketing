@@ -48,9 +48,14 @@ Cinq livrables métier, une couche d'ordonnancement, une console d'observation :
   `diagnostic/orchestrator.py` + `dag_pipeline.yaml`. Ordonnancement déterministe
   de toute la chaîne, instance `ApiIO` **unique**, verrou de run, reprise
   idempotente. Décision : `docs/adr/0001-orchestrateur-dag-deterministe.md`.
-- **Cockpit opérateur** : `webapp/backend` (FastAPI, 8 routes `GET`) +
-  `webapp/frontend` (React 18 + Vite + TypeScript, 5 écrans). **Lecture seule
-  stricte** — complément d'Obsidian, jamais un substitut à la porte humaine.
+- **Cockpit opérateur** : `webapp/backend` (FastAPI, 10 routes `GET`, dont un
+  flux SSE d'observabilité GreenIT temps réel) + `webapp/frontend` (React 18 +
+  Vite + TypeScript, 6 écrans). **Lecture seule stricte** — complément
+  d'Obsidian, jamais un substitut à la porte humaine.
+- **GreenIT — efficience et observabilité** : routage de modèle **déterministe**
+  piloté par `knowledge/greenit.yaml` (`diagnostic/greenit.py`), bornes de
+  frugalité, empreinte **estimée** tracée au grand livre.
+  Décision : `docs/adr/0002-greenit-efficience-et-observabilite.md`.
 - **J6 — outreach** : **non implémenté, non activable** (voir ci-dessus).
 
 Cible actuelle : persona 1 — installateur / détaillant HVAC, séquence Québec → Suisse.
@@ -112,8 +117,8 @@ Cible actuelle : persona 1 — installateur / détaillant HVAC, séquence Québe
 │     └─ reviews.py               ← palier 1 — Google Places
 │
 ├─ webapp/                        ← cockpit opérateur — LECTURE SEULE STRICTE
-│  ├─ backend/                    ← FastAPI : 8 routes GET, services.py
-│  └─ frontend/                   ← React + Vite + TS : 5 écrans, thème clair/sombre
+│  ├─ backend/                    ← FastAPI : 10 routes GET, services.py, greenit.py (SSE)
+│  └─ frontend/                   ← React + Vite + TS : 6 écrans, thème clair/sombre
 │
 ├─ tests/                         ← suite Python (J1→J5 + CORE)
 ├─ .claude/agents/                ← sous-agents Claude Code persistants
@@ -245,8 +250,10 @@ pytest tests/ -v -k "vault"                 # tests vault
 pytest tests/ -v -k "integration"           # test end-to-end
 pytest tests/ -v -k "export or usage or preflight"   # tests J5
 pytest tests/ -v -k "orchestrator or pipeline_cli"   # tests CORE
-pytest webapp/backend/tests -q              # backend cockpit (18 tests)
-cd webapp/frontend && npm run build && npm run test   # front (tsc + vite + vitest)
+pytest tests/integration -q                 # flux e2e réels contre un faux serveur local (46)
+pytest tests/test_greenit.py -q             # routage, frugalité, empreinte (78)
+pytest webapp/backend/tests -q              # backend cockpit (45 tests)
+cd webapp/frontend && npm run build && npm run test   # front (tsc + vite + vitest, 34)
 ```
 
 **Toute la suite tourne sans aucune clé API** — c'est la preuve permanente que
@@ -273,7 +280,7 @@ raison pour laquelle les coûts et les écritures sont intégralement traçables
 | Grand livre | `api_usage.log` (coûts) · `runs.log` (écritures vault) |
 
 **Invariants de sécurité** — détail et preuves dans
-`docs/architecture/invariants.md` (19 invariants, chacun avec sa commande de
+`docs/architecture/invariants.md` (21 invariants, chacun avec sa commande de
 contrôle) :
 
 - Toute écriture dans le vault est **atomique** (`tmp` + `os.replace()`) et

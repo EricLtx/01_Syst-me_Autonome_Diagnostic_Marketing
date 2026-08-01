@@ -38,8 +38,8 @@ d'observation (cockpit) :
   `diagnostic/orchestrator.py` + `dag_pipeline.yaml`. Ordonnancement déterministe
   de toute la chaîne, instance `ApiIO` **unique** injectée, verrou de run.
   Décision : `docs/adr/0001-orchestrateur-dag-deterministe.md`.
-- **Cockpit opérateur** : `webapp/backend` (FastAPI, 8 routes `GET`) +
-  `webapp/frontend` (React 18 + Vite + TS, 5 écrans). **Lecture seule stricte** —
+- **Cockpit opérateur** : `webapp/backend` (FastAPI, 10 routes `GET`) +
+  `webapp/frontend` (React 18 + Vite + TS, 6 écrans). **Lecture seule stricte** —
   complément d'Obsidian, jamais un substitut à la porte humaine.
 - **J6 — outreach** : **non implémenté, non activable** (validation juridique
   CASL / nLPD + art. 3 LCD / RGPD / AI Act requise au préalable).
@@ -181,21 +181,60 @@ Règles non négociables CORE :
 
 ### Cockpit opérateur (`webapp/`) — lecture seule stricte
 
-- **Backend** `webapp/backend/` (FastAPI) : 8 routes `GET` — `/api/health`,
+- **Backend** `webapp/backend/` (FastAPI) : **10 routes `GET`** — `/api/health`,
   `/api/preflight`, `/api/pipeline/funnel`, `/api/prospects`,
-  `/api/prospects/{slug}`, `/api/usage`, `/api/icp`, `/api/runs`. Logique d'accès
-  concentrée dans `services.py`. CORS restreint (`allow_methods=["GET"]`).
+  `/api/prospects/{slug}`, `/api/usage`, **`/api/greenit`**,
+  **`/api/greenit/stream`** (SSE, observabilité temps réel), `/api/icp`,
+  `/api/runs`. Logique d'accès dans `services.py` ; lecture/agrégation du grand
+  livre pour GreenIT dans `webapp/backend/greenit.py`.
+  CORS restreint (`allow_methods=["GET"]`).
   Variables d'environnement : `VAULT_PATH`, `API_USAGE_LOG`, `RUNS_LOG`,
   `PREFLIGHT_ROOT_DIR`.
-- **Frontend** `webapp/frontend/` (React 18 + Vite 5 + TS 5) : 5 écrans —
+- **Frontend** `webapp/frontend/` (React 18 + Vite 5 + TS 5) : **6 écrans** —
   Dashboard `/`, Prospects `/prospects`, Détail `/prospects/:slug`,
-  Usage `/usage`, Préflight `/preflight`. Thème clair **et** sombre
-  (`src/theme.css`), mode mock hors ligne (`src/mocks/fixtures.ts`), tests Vitest.
+  Usage `/usage`, **GreenIT `/greenit`**, Préflight `/preflight`. Thème clair
+  **et** sombre (`src/theme.css`), mode mock hors ligne
+  (`src/mocks/fixtures.ts`), tests Vitest.
 - **AUCUNE écriture vault, AUCUNE transition d'état, AUCUN appel `api_io`,
   AUCUN réseau sortant.** Un bouton « Valider » dans cette interface
   contournerait la porte humaine : c'est interdit par construction.
 - Frugalité assumée : aucune librairie de graphiques ni UI kit, composants écrits
   à la main.
+
+### GreenIT — efficience des appels IA et observabilité
+
+`diagnostic/greenit.py` + `knowledge/greenit.yaml`. ADR :
+`docs/adr/0002-greenit-efficience-et-observabilite.md`.
+
+Règles non négociables GreenIT :
+- **Routage de modèle DÉTERMINISTE piloté par YAML.** `choisir_modele(contexte,
+  config)` évalue des comparaisons explicites — mêmes entrées, même sortie.
+  **Aucun LLM ne décide du routage** (le superviseur-planificateur LLM est
+  refusé par l'ADR 0001 : ne pas le réintroduire par cette porte).
+  Profil par défaut `standard` (haiku, 600 tokens) ; escalade vers `qualite`
+  (sonnet, 900) en mode `ou` sur trois règles : `quality_check_echoue == true`,
+  `nb_failles >= 6`, `score_global >= 75`.
+- **Le modèle n'est jamais en dur** : changer de modèle = éditer le YAML.
+- **Bornes de frugalité appliquées avant émission** : troncature du contexte
+  (4 000 car.), plafond du prompt assemblé (8 000 car.), `max_tokens_sortie`
+  (600) qui écrase le profil s'il est plus permissif, TTL de cache (30 j).
+  `activer_prompt_caching: false` — non rentable tant qu'aucun préfixe long
+  n'est réutilisé (un prompt par prospect).
+- **7 champs ajoutés à `LedgerEntry`** : `octets_entrants`, `octets_sortants`,
+  `duree_ms`, `energie_wh`, `co2e_g`, `modele`, `profil`. Tous optionnels avec
+  défaut → **les anciennes lignes se relisent sans migration**
+  (`extra="forbid"` interdit les champs inconnus, pas les champs manquants).
+- **Empreinte régionalisée** : `intensite_carbone(region, config)` en g CO₂e/kWh.
+  L'écart entre un mix hydroélectrique et la moyenne mondiale est de **deux
+  ordres de grandeur** — ignorer la région produirait un chiffre sans sens.
+- ⚠️ **`energie_wh` et `co2e_g` sont des ESTIMATIONS**, jamais des mesures
+  certifiées. Facteurs = ordres de grandeur paramétrables, `releve_le: null`
+  tant qu'aucun réétalonnage n'a eu lieu. Usage **comparatif** uniquement
+  (avec/sans cache, frugal vs qualité). Toute valeur affichée porte la mention
+  « estimation ». Un chiffrage opposable exigerait une ACV par un tiers.
+- ⚠️ **Aucun pourcentage d'économie n'est mesurable aujourd'hui** :
+  `knowledge/api_pricing.yaml` est à `0`, donc tous les coûts valent 0,00.
+  Ne jamais avancer de gain chiffré avant la Phase D.
 
 ### J4 — Agent de découverte
 
@@ -393,7 +432,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
 
-## État des tests (527 dans `tests/` + 38 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (527 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -419,26 +458,33 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_preflight.py` | Tests 9-12, 14 : GO/NO-GO, warn, garde-fous AST, régression | 27 |
 | `test_orchestrator.py` | CORE : DAG, tri topologique, verrou, ApiIO unique, machine à états, budget, tranches | ~35 |
 | `test_pipeline_cli.py` | CORE : CLI `run_pipeline.py` | ~4 |
-| `webapp/backend/tests/test_api.py` | Cockpit : 8 routes, lecture seule, dégradation vault vide | 18 |
-| `webapp/frontend/src/__tests__/` | Cockpit : api, dashboard, prospects, détail (Vitest) | — |
+| `test_greenit.py` | GreenIT : config, routage déterministe, max_tokens, empreinte, troncature, ledger, rétro-compat, intégration synthesis | **78** |
+| `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur | **46** |
+| `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **45** |
+| `webapp/frontend/src/__tests__/` | Cockpit : api, dashboard, prospects, détail, greenit (Vitest) | **34** |
 
 **Toute la suite tourne sans aucune clé API** : c'est la preuve permanente que le
 repli déterministe et les stubs fonctionnent.
 
 ## Prochaines tâches
 
-### Chantiers en cours `[EN COURS]` — à documenter en seconde passe
+### Dette technique identifiée (non bloquante, à traiter côté code)
 
-- **GreenIT** — `diagnostic/greenit.py`, `knowledge/greenit.yaml`, effets sur
-  `api_io.py` / `api_schema.py` / `synthesis.py`. Routage de modèle **déterministe
-  piloté par YAML** (aucun LLM ne décide du routage), bornes de frugalité,
-  empreinte estimée tracée au grand livre.
-  ADR : `docs/adr/0002-greenit-efficience-et-observabilite.md` (statut : en cours).
-  ⚠️ Les chiffres énergie/CO₂e sont des **estimations paramétrables**, jamais des
-  mesures certifiées — les étiqueter comme telles partout.
-- **Intégration end-to-end** — `tests/integration/**`, `scripts/**`.
-- **Collecteurs / découverte** — `diagnostic/discovery.py`, `enrichment.py`,
-  `collectors/*` : le tableau des collecteurs ci-dessus est à réviser.
+1. **Duplication de la logique de coût.** `diagnostic/usage.py::agreger` et
+   `webapp/backend/greenit.py::agreger` calculent tous deux le coût depuis le
+   **même** grand livre. **Couvert depuis `611eb74`** par
+   `webapp/backend/tests/test_greenit_usage_convergence.py` (7 tests : coût
+   total, comptages, par fournisseur, filtre `depuis`, ledger vide, endpoints
+   HTTP) — il échoue si les deux divergent. Le risque de divergence silencieuse
+   est donc **fermé**. Reste une duplication de code : refactor recommandé à
+   terme (une seule fonction de calcul, deux vues), **non urgent**.
+2. **`diagnostic/greenit.py` absent de la liste `_check_garde_fous_bus`**
+   (`diagnostic/preflight.py`), alors que l'invariant I4 pose la règle « tout
+   nouveau module de ce type doit y être ajouté ». La couverture est assurée
+   **de fait** par le test générique
+   `tests/test_api_io.py::test_requests_pas_importe_niveau_module_hors_api_io`,
+   qui parcourt `diagnostic/**` en `rglob` — donc l'invariant tient, mais pas
+   par le mécanisme annoncé. Ajouter le module à la liste du préflight.
 
 ### Paramétrage réel (Phase D — opératrice / Cowork, pas de code à écrire)
 1. Renseigner `SERP_API_KEY` et `APOLLO_API_KEY` dans l'environnement.

@@ -1,23 +1,20 @@
 # ADR 0002 — GreenIT : efficience des appels IA et observabilité de l'empreinte
 
-- **Statut** : **en cours d'implémentation** — chantier GreenIT actif au moment
-  de la rédaction (2026-08-01). Les éléments chiffrés et le détail
-  d'implémentation sont **à compléter en seconde passe**, une fois le code
-  vérifiable dans le dépôt.
-- **Date** : 2026-08-01
+- **Statut** : **acceptée — implémentée** (commit `6055e14` pour le socle,
+  `d5b14d1` pour l'observabilité cockpit). Vérifiée par exécution le 2026-08-01.
+- **Date** : 2026-08-01 · **Implémentation constatée** : 2026-08-01
 - **Remplace** : —
 - **Remplacée par** : —
 - **Se situe dans** : Palier 2 de l'ADR 0001 (greffe « routeur de modèle piloté
-  par YAML »), anticipé sur le socle du Palier 1.
+  par YAML »), anticipé sur le socle du Palier 1. **Le superviseur-planificateur
+  LLM de B reste refusé** — le routage retenu ici est purement déterministe.
 
-> ⚠️ **Cette ADR documente une décision, pas un état livré.** Au moment de sa
-> rédaction, le chantier était en cours et son arborescence encore mouvante :
-> `knowledge/greenit.yaml` existait dans l'arbre de travail (non commité), et
-> des artefacts GreenIT apparaissaient également côté cockpit
-> (`webapp/backend/`, `webapp/frontend/`). **L'emplacement définitif des modules
-> et le détail de leur API restent à constater en seconde passe.** Les valeurs
-> citées ci-dessous décrivent l'**intention de conception** ; elles doivent être
-> revérifiées avant d'être considérées comme vraies.
+> ⚠️ **Ce qui est implémenté est le mécanisme, pas une économie démontrée.**
+> Aucun pourcentage de gain n'est mesurable aujourd'hui : `api_pricing.yaml` est
+> intégralement à `0.0`, donc **tous les coûts valent 0,00**. Les facteurs
+> d'empreinte n'ont jamais été étalonnés (`releve_le: null`). Toute affirmation
+> du type « X % d'économie » serait une invention. Voir §« Ce qui n'est pas
+> mesurable ».
 
 ---
 
@@ -193,62 +190,227 @@ Cette règle est formalisée comme invariant **I19** dans
 
 ---
 
-## À compléter en seconde passe
+## Implémentation constatée (vérifiée par exécution le 2026-08-01)
 
-Cette section est un **contrat avec la prochaine passe documentaire**. Chaque
-point exige une vérification dans le code, pas une reprise de cette ADR.
+Les dix points laissés ouverts à la rédaction initiale, relevés dans le code.
 
-- [ ] **Emplacement définitif**, API publique et responsabilités des modules
-      d'efficience (socle `diagnostic/` et/ou cockpit `webapp/`) : fonctions
-      exportées, signatures, et qui appelle quoi. Vérifier notamment qu'aucune
-      duplication de logique de calcul n'existe entre socle et cockpit — le
-      cockpit doit rester en **lecture seule** et ne rien recalculer que le
-      grand livre ne contienne déjà.
-- [ ] **Valeurs finales** de `knowledge/greenit.yaml` : profils (modèles exacts,
-      `max_tokens`), règles d'escalade (champs, opérateurs, seuils), bornes de
-      frugalité, facteurs d'empreinte, table d'intensité carbone par région.
-- [ ] Point d'intégration exact dans `diagnostic/synthesis.py` : quel contexte
-      est fourni au routeur, à quel moment, et comment le repli déterministe est
-      préservé.
-- [ ] Champs ajoutés à `LedgerEntry` / `api_schema.py`, et rétro-compatibilité
-      de lecture des anciennes lignes du grand livre.
-- [ ] Colonnes ajoutées au rapport de `run_usage.py`, et **vérification que
-      l'étiquette « estimation » apparaît effectivement** partout.
-- [ ] Restitution dans le cockpit (`webapp/`), même exigence d'étiquetage.
-- [ ] **Liste des tests** couvrant : déterminisme du routage (mêmes entrées →
-      même profil), application effective des bornes, calcul d'empreinte,
-      sélection de l'intensité carbone par région, absence de régression sur la
-      suite existante.
-- [ ] Ajout des nouveaux modules à la liste surveillée par le garde-fou AST
-      `_check_garde_fous_bus` si l'un d'eux est susceptible d'importer
-      `anthropic`.
-- [ ] **Mesure avant / après** sur un jeu de données de test : taux de cache
-      hit, tokens de sortie moyens, part d'escalades. Une optimisation sans
-      mesure est une opinion.
-- [ ] Mise à jour de `docs/architecture/flux-donnees.md` §4 (synthèse) et §7
-      (usage), et de `docs/architecture/invariants.md` si un invariant naît de
-      ce chantier.
+### 1. Emplacement et responsabilités — `[x]`
+
+| Module | Rôle |
+|---|---|
+| `diagnostic/greenit.py` | socle : routage, bornes, estimation d'empreinte |
+| `knowledge/greenit.yaml` | la donnée : profils, règles, bornes, facteurs |
+| `diagnostic/synthesis.py` | consommateur du routage |
+| `diagnostic/api_schema.py` | 7 champs GreenIT sur `LedgerEntry` |
+| `webapp/backend/greenit.py` | lecture/agrégation du grand livre + tail SSE, **lecture seule** |
+| `webapp/frontend/src/pages/GreenIT.tsx` | écran `/greenit` |
+
+API publique du socle : `charger_config()`, `evaluer_escalade()`,
+`choisir_modele()`, `max_tokens_du_profil()`, `tronquer_contexte()`,
+`intensite_carbone()`, `estimer_empreinte()`.
+
+> **Duplication assumée, convergence garantie.** `diagnostic/usage.py::agreger`
+> et `webapp/backend/greenit.py::agreger` calculent tous deux le coût depuis le
+> **même** grand livre. Depuis `611eb74`, un **test de non-régression croisé**
+> (`webapp/backend/tests/test_greenit_usage_convergence.py`, 7 tests) échoue si
+> les deux divergent. Voir §« Dette technique ».
+
+### 2. Valeurs finales de `knowledge/greenit.yaml` — `[x]`
+
+| Profil | Modèle | `max_tokens` |
+|---|---|---|
+| `frugal` | `claude-haiku-4-5-20251001` | 400 |
+| `standard` (défaut) | `claude-haiku-4-5-20251001` | 600 |
+| `qualite` (escalade) | `claude-sonnet-4-5` | 900 |
+
+Routage : `profil_defaut: standard`, `profil_escalade: qualite`, `mode: ou`
+(une seule règle vraie suffit).
+
+| Règle | Champ | Opérateur | Valeur |
+|---|---|---|---|
+| `quality_check_echoue` | `quality_check_echoue` | `==` | `true` |
+| `failles_nombreuses` | `nb_failles` | `>=` | `6` |
+| `prospect_a_fort_score` | `score_global` | `>=` | `75` |
+
+Frugalité : `troncature_contexte_caracteres: 4000`,
+`troncature_prompt_caracteres: 8000`, `max_tokens_sortie: 600`,
+`cache_ttl_jours: 30`, `activer_prompt_caching: false`.
+`releve_le: null` — **les facteurs d'empreinte n'ont jamais été étalonnés.**
+
+### 3. Intégration dans `synthesis.py` — `[x]`
+
+`from diagnostic import greenit` ; `charger_config()` puis
+`choisir_modele(contexte, config)` → `(modele, profil)` ;
+`max_tokens_du_profil(profil, config)` ; double troncature —
+`tronquer_contexte(faits, config)` puis
+`tronquer_contexte(prompt, config, cle="troncature_prompt_caracteres")` avant
+émission. Le modèle est passé à l'appel (`model=modele, max_tokens=max_tokens`).
+**Le modèle n'est nulle part en dur.** Le repli déterministe sans
+`ANTHROPIC_API_KEY` est préservé (couvert par
+`tests/integration/test_e2e_diagnostic.py::test_sans_cle_anthropic_repli_deterministe_et_zero_appel`).
+
+### 4. Champs ajoutés à `LedgerEntry` et rétro-compatibilité — `[x]`
+
+Sept champs, tous optionnels avec valeur par défaut : `octets_entrants`,
+`octets_sortants`, `duree_ms`, `energie_wh`, `co2e_g`, `modele`, `profil`.
+
+Rétro-compatibilité **vérifiée par exécution** : une ligne antérieure à
+l'extension se relit sans migration (`energie_wh` → `0.0`), une ligne enrichie
+se relit intégralement. `extra="forbid"` interdit les champs **inconnus**, pas
+les champs **manquants** — c'est ce qui rend la migration inutile.
+Couvert par `tests/test_greenit.py::TestRetroCompatLedger`.
+
+### 5-6. Restitution — `[x]` partiellement
+
+Rapport `run_usage.py` et écran cockpit `/greenit` (+ flux SSE
+`/api/greenit/stream`). L'étiquetage « estimation » est présent dans les
+docstrings du socle et du module cockpit.
+**Reste à vérifier finement** : que l'étiquette apparaît sur **chaque valeur
+affichée** de l'interface, pas seulement en en-tête d'écran.
+
+### 7. Tests — `[x]`
+
+`tests/test_greenit.py` : **78 tests** (compté, pas recopié — le message du
+commit annonçait 77, écart corrigé par la revue), répartis en
+`TestChargerConfig`, `TestChoisirModele`, `TestMaxTokens`,
+`TestEstimerEmpreinte`, `TestTronquerContexte`, `TestLedgerGreenIT`,
+`TestEstimerOctets`, `TestRetroCompatLedger`, `TestSynthesisGreenIT`.
+
+### 8. Garde-fou AST — `[!]` **dette**
+
+`diagnostic/greenit.py` **n'est pas** dans la liste `modules_j5` de
+`_check_garde_fous_bus`. L'invariant tient malgré tout : le test générique
+`tests/test_api_io.py::test_requests_pas_importe_niveau_module_hors_api_io`
+parcourt `diagnostic/**` en `rglob`. Mais il tient **par le filet générique, pas
+par le mécanisme annoncé**. Voir §« Dette technique ».
+
+### 9. Mesure avant / après — `[ ]` **impossible à ce stade**
+
+Voir §« Ce qui n'est pas mesurable » ci-dessous.
+
+### 10. Documentation — `[x]`
+
+`docs/architecture/README.md` §7, `flux-donnees.md` §4 et §7,
+`docs/CHANGELOG.md` itération 2, `CLAUDE.md` section GreenIT.
+
+---
+
+## Ce qui n'est PAS mesurable aujourd'hui
+
+Le mécanisme est livré. **L'économie ne l'est pas** — et il serait malhonnête de
+la chiffrer :
+
+- **Aucun gain monétaire mesurable.** `knowledge/api_pricing.yaml` est
+  intégralement à `0.0` avec `releve_le: null` : tous les coûts du grand livre
+  valent 0,00. Un pourcentage d'économie calculé sur zéro n'a aucun sens.
+- **Aucun gain énergétique mesuré.** Les facteurs d'empreinte n'ont jamais été
+  étalonnés (`releve_le: null`) et restent des ordres de grandeur. Ils
+  permettent de **comparer deux scénarios entre eux**, pas de produire une
+  valeur absolue défendable.
+- **Aucune donnée de production.** Aucune clé API n'est disponible, aucun run
+  réel n'a eu lieu : il n'existe pas de jeu de mesures « avant » auquel comparer
+  un « après ».
+
+Ce qui est **réellement établi** : le routage est déterministe et testé, les
+bornes sont appliquées avant émission, l'empreinte est calculée et tracée, et
+le cache réduit démontrablement le nombre d'appels réseau
+(`tests/integration/test_e2e_bus.py::test_deux_appels_identiques_une_seule_requete_reseau`
+prouve qu'un second appel identique ne produit **aucune** requête réseau).
+
+La mesure avant/après devient possible **après la Phase D**, sur données réelles.
+
+---
+
+## Dette technique inscrite
+
+1. **Deux implémentations du calcul de coût** — `diagnostic/usage.py::agreger`
+   (typée, via `LedgerEntry`) et `webapp/backend/greenit.py::agreger` (JSONL
+   brut, défensive).
+   **Statut : risque fermé** (`611eb74`). Un test de non-régression croisé,
+   `webapp/backend/tests/test_greenit_usage_convergence.py` (7 tests), compare
+   les deux agrégations sur un ledger panaché et **échoue si elles divergent**.
+   Reste une duplication de *code* — refactor souhaitable à terme (une seule
+   fonction de calcul, deux vues), **non urgent**.
+   *Note de méthode* : ce test a été créé **après** que la passe documentaire a
+   signalé que le docstring l'annonçait sans qu'il existe. Un filet de sécurité
+   documenté mais absent est plus dangereux qu'un manque assumé — le signaler a
+   suffi à le faire combler.
+2. **`diagnostic/greenit.py` hors de la liste `_check_garde_fous_bus`**
+   (cf. §8). **Statut : ouvert** — vérifié le 2026-08-01,
+   `sed -n '/modules_j5 = \[/,/\]/p' diagnostic/preflight.py | grep -c greenit`
+   → `0`. L'invariant tient via le test générique en `rglob`, mais le préflight
+   ne le signale pas. → L'ajouter à `diagnostic/preflight.py`.
+
+Le point 2 est **non bloquant** (l'invariant tient) mais doit être traité côté
+code — hors périmètre de cette passe documentaire.
+
+---
+
+## Note sur la justification du parsing défensif (cockpit)
+
+Le choix de lire le JSONL brut dans `webapp/backend/greenit.py` plutôt que via
+`LedgerEntry` est **correct**, mais l'argument initialement avancé (« `extra="forbid"`
+rejetterait les lignes enrichies ») était **faux** : `LedgerEntry` relit
+parfaitement les lignes enrichies depuis `6055e14` — vérifié par exécution.
+
+Le **bon** argument, celui que porte aujourd'hui le docstring du module :
+`LedgerEntry` est un schéma d'**écriture**, strict par construction. Une vue de
+**consultation** a le devoir inverse — ne jamais tomber sur ce qu'elle lit. Or
+`LedgerEntry.model_validate` lève sur :
+
+- un **champ futur** — vérifié : ajouter un champ inconnu déclenche une
+  `ValidationError`. Enrichir le ledger demain ferait passer le cockpit en 500
+  tant que `webapp/` n'a pas rattrapé le schéma, pour un champ qui ne le
+  concerne même pas ;
+- une **ligne dégradée** — `ts` malformé, `unites: null`, `resultat` hors
+  énumération : cas normaux pour un journal append-only lu **à chaud** pendant
+  qu'un autre processus écrit.
+
+La tolérance au schéma futur et aux lignes corrompues est donc la vraie
+justification. Elle est documentée comme telle dans le module.
 
 ---
 
 ## Vérification
 
-À l'établissement de cette ADR, les contrôles applicables sont :
-
 ```bash
-# Le fichier de stratégie d'efficience se charge et est bien formé
-python -c "import yaml; d=yaml.safe_load(open('knowledge/greenit.yaml')); \
-print(sorted(d)); print(sorted(d.get('profils', {})))"
+# Tests GreenIT — 78 collectés
+python -m pytest tests/test_greenit.py --collect-only -q | tail -2
 
-# La suite reste verte (aucune régression introduite par le chantier)
+# Déterminisme du routage : mêmes entrées → même profil
+python -m pytest tests/test_greenit.py -q -k "ChoisirModele"
+
+# Configuration : profils, règles, bornes
+python -c "import yaml; d=yaml.safe_load(open('knowledge/greenit.yaml')); \
+print({k: (v['modele'], v['max_tokens']) for k, v in d['profils'].items()}); \
+print(d['routage']['profil_defaut'], d['routage']['mode']); \
+print([r['nom'] for r in d['routage']['regles_escalade']])"
+
+# Rétro-compatibilité du grand livre : ancienne ligne relue sans migration
+python -m pytest tests/test_greenit.py -q -k "RetroCompatLedger"
+
+# Le modèle n'est jamais en dur dans synthesis.py
+grep -n "greenit\|choisir_modele\|max_tokens_du_profil" diagnostic/synthesis.py
+
+# Le cache évite réellement un appel réseau (test e2e contre serveur local)
+python -m pytest tests/integration/test_e2e_bus.py -q -k "cache"
+
+# Suite complète — aucune régression
 python -m pytest tests/ -q
 
-# Le repli déterministe fonctionne toujours sans clé LLM
-python -m pytest tests/test_j1_smoke.py -q
-
-# Aucun coût réel n'est engagé : la grille tarifaire est toujours à zéro
+# Aucun coût réel engagé : la grille tarifaire est toujours à zéro
 python run_usage.py
 ```
 
-Les contrôles spécifiques au routage et au calcul d'empreinte seront ajoutés en
-seconde passe, avec les noms de tests réels.
+**Convergence socle ⇄ cockpit (créée par `611eb74`) :**
+
+```bash
+python -m pytest webapp/backend/tests/test_greenit_usage_convergence.py -q   # 7 tests
+```
+
+**Contrôle de dette restante (rend `0`, c'est le défaut à corriger) :**
+
+```bash
+# diagnostic/greenit.py absent de la liste du garde-fou AST du préflight
+sed -n '/modules_j5 = \[/,/\]/p' diagnostic/preflight.py | grep -c greenit   # → 0
+```

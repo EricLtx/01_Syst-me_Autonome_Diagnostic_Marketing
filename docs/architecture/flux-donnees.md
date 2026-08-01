@@ -1,7 +1,7 @@
 # Flux de données — de l'ICP à la liste Kemana
 
 > Chaîne de bout en bout, telle qu'elle est réellement implémentée.
-> Vérifié le **2026-08-01**, commit de tête `2ed8d93`.
+> Vérifié le **2026-08-01**, commit de tête `4585a10` (itération 2).
 > Vue d'ensemble : `docs/architecture/README.md` · Règles :
 > `docs/architecture/invariants.md`.
 >
@@ -139,9 +139,6 @@ fiche decouvert
 | `gbp.py` | 1 | Google Places `text_search` via `api_io` | stub `verified=None` |
 | `reviews.py` | 1 | Google Places `text_search` + `place_details` via `api_io` | stub `count=None` |
 
-> Ce tableau est susceptible d'évoluer : un chantier parallèle touche
-> `diagnostic/collectors/*`. **À réviser en seconde passe.**
-
 Les collecteurs **dérivés** (`seo`, `social`) n'ont aucun accès réseau propre :
 après la collecte du site, le pipeline leur **injecte** `_website_signals`. Une
 seule requête par cible, conformément à la politique de scraping poli.
@@ -161,9 +158,28 @@ qu'aucune affirmation n'est produite sans faille réelle correspondante.
 Sans `ANTHROPIC_API_KEY`, un **repli déterministe** prend le relais : c'est le
 mode dans lequel tourne l'intégralité de la suite de tests aujourd'hui.
 
-> Le chantier GreenIT `[EN COURS]` introduit un **routage de modèle déterministe
-> piloté par `knowledge/greenit.yaml`** en amont de cet appel. **À compléter en
-> seconde passe** : profils, règles de routage, effet mesuré.
+**Routage GreenIT (itération 2).** Avant l'appel, `synthesis.py` interroge
+`diagnostic/greenit.py` :
+
+```
+charger_config()                          # knowledge/greenit.yaml
+  → choisir_modele(contexte, config)      # (modele, profil) — DÉTERMINISTE
+  → max_tokens_du_profil(profil, config)  # plafonné par frugalite.max_tokens_sortie
+  → tronquer_contexte(faits, config)      # 4 000 car.
+  → tronquer_contexte(prompt, config, cle="troncature_prompt_caracteres")  # 8 000 car.
+  → appel avec model=modele, max_tokens=max_tokens
+```
+
+Le contexte de routage porte `nb_failles`, `score_global`,
+`quality_check_echoue`, `caracteres_prompt`. Profil par défaut `standard`
+(haiku, 600 tokens) ; escalade vers `qualite` (sonnet, 900) si **une** des trois
+règles est vraie : `quality_check_echoue == true`, `nb_failles >= 6`,
+`score_global >= 75`.
+
+**Aucun LLM ne décide du routage** (invariant I20) et **le modèle n'est nulle
+part en dur** : changer de modèle = éditer le YAML. Le repli déterministe sans
+`ANTHROPIC_API_KEY` est préservé — `test_e2e_diagnostic.py::test_sans_cle_anthropic_repli_deterministe_et_zero_appel`
+vérifie qu'**aucun appel** n'est émis dans ce cas.
 
 ### Écriture
 
@@ -233,9 +249,36 @@ Aucun `open()` direct : l'invariant I1 vaut aussi pour les notes système.
 Le rapport donne, par fournisseur : unités consommées, coût estimé, taux de cache
 hit, erreurs de lecture.
 
-> **Tous les coûts valent actuellement 0,00** puisque `api_pricing.yaml` est
-> intégralement à `0.0`. Ce n'est pas une gratuité : c'est un paramétrage absent.
+**Extension GreenIT (itération 2).** Chaque ligne du grand livre porte désormais
+sept champs supplémentaires — `octets_entrants`, `octets_sortants`, `duree_ms`,
+`energie_wh`, `co2e_g`, `modele`, `profil` — tous optionnels avec valeur par
+défaut, donc **les lignes antérieures se relisent sans migration**.
+L'énergie et le CO₂e sont calculés par `greenit.estimer_empreinte()` à partir des
+facteurs de `knowledge/greenit.yaml`, avec une **intensité carbone par région**
+(l'écart entre un mix hydroélectrique et la moyenne mondiale est de deux ordres
+de grandeur : ignorer la région produirait un chiffre sans sens).
+
+Côté cockpit, `webapp/backend/greenit.py` relit le même grand livre pour les
+routes `/api/greenit` et `/api/greenit/stream` (SSE, tail par offset d'octets).
+Il lit le **JSONL brut** plutôt que via `LedgerEntry` — non pas par incapacité à
+relire les lignes enrichies (`LedgerEntry` y parvient), mais parce qu'une vue de
+consultation doit tolérer un **champ futur** ou une **ligne corrompue** lue à
+chaud, là où un schéma d'écriture doit rester strict.
+
+> ⚠️ **Deux avertissements à ne jamais omettre :**
+> 1. **Tous les coûts valent actuellement 0,00** puisque `api_pricing.yaml` est
+>    intégralement à `0.0`. Ce n'est pas une gratuité : c'est un paramétrage
+>    absent. **Aucun pourcentage d'économie n'est calculable.**
+> 2. **`energie_wh` et `co2e_g` sont des ESTIMATIONS**, jamais des mesures
+>    certifiées : facteurs non étalonnés (`releve_le: null`), utiles en
+>    **comparaison** de scénarios, pas en valeur absolue.
+>
 > Voir invariant I19.
+
+> **Dette technique** : `diagnostic/usage.py::agreger` et
+> `webapp/backend/greenit.py::agreger` calculent tous deux le coût depuis le même
+> fichier. Ils convergent au centime aujourd'hui, mais **aucun test ne le
+> garantit**. Voir I5.
 
 ---
 
@@ -284,11 +327,28 @@ L'écriture du manifeste est **best-effort** : elle ne fait jamais échouer un r
 
 ---
 
-## 11. Points à réviser en seconde passe
+## 11. La chaîne prouvée de bout en bout
 
-| Section | Motif |
+Depuis l'itération 2, chaque étape décrite ci-dessus est couverte par un test
+d'intégration **réel** — exécuté contre un faux serveur HTTP local
+(`tests/integration/faux_api.py`), **sans aucune clé API**. 46 tests au total.
+
+| Étape de ce document | Test qui la prouve |
 |---|---|
-| §4 — tableau des collecteurs | chantier parallèle sur `diagnostic/collectors/*`, `discovery.py`, `enrichment.py` |
-| §4 — synthèse | routage de modèle GreenIT à documenter (profils, règles, effet mesuré) |
-| §7 — usage | colonnes d'empreinte énergie/CO₂e à documenter, avec leur statut d'estimation |
-| §0 et §10 | tests d'intégration bout-en-bout (`tests/integration/**`) et scripts (`scripts/**`) à intégrer |
+| §2 préflight | `test_e2e_orchestrateur.py::TestPreflight` — GO avec grille de test, **NO-GO avec la grille de production encore à zéro** |
+| §3 découverte | `test_e2e_decouverte.py` — SERP → fiches, filtres ICP, dédup, Apollo, minimisation RGPD, dry-run sans écriture |
+| §4 diagnostic | `test_e2e_diagnostic.py` — collecte réelle, cache Places partagé entre `gbp` et `reviews`, transition `decouvert → diagnostique`, **repli déterministe sans appel** quand la clé manque |
+| §5 porte humaine | `test_e2e_bus.py::test_agent_ne_peut_pas_valider_une_fiche` et `test_transitions_illegales_refusees` |
+| §6 export | `test_e2e_export.py` — opt-out absolu, lecture seule, refus d'écrire dans le vault |
+| §7 usage | `test_e2e_bus.py::test_grand_livre_est_du_jsonl_append_only` |
+| Bus réseau (transverse) | `test_e2e_bus.py` — **deux appels identiques → une seule requête réseau** ; **budget interrompu AVANT l'appel** ; cache refusé dans le vault |
+| Chaîne complète | `test_e2e_orchestrateur.py::TestChaineComplete` — état cohérent, idempotence, dry-run, verrou anti-concurrence |
+
+**Ce que ça change** : les invariants ne reposent plus sur des mocks qui
+pourraient mentir sur le comportement réseau réel. Le cache, les budgets et la
+machine à états sont désormais vérifiés par observation du trafic effectivement
+reçu par le serveur.
+
+```bash
+python -m pytest tests/integration -q          # 46 tests, aucune clé requise
+```

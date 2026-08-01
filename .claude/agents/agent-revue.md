@@ -120,6 +120,9 @@ accompagnée des preuves exécutées.
 | Chiffre de coût/CO₂e présenté comme mesuré | remonter au YAML source ; toute valeur issue de `knowledge/*.yaml` est une **estimation paramétrable** |
 | « préflight GO » | il est **NO-GO structurel** tant que `api_pricing.yaml` est à 0 et le vault non initialisé — un GO annoncé est un signal d'alerte |
 | Fichier hors périmètre modifié | `git diff --name-only` croisé avec le périmètre annoncé du chantier |
+| **Chiffre périmé dans la doc** (routes, écrans, tests) | re-compter **après** que tous les chantiers de l'itération ont atterri — jamais au fil de l'eau. C'est le motif qui a fait tomber DOCUMENTATION à 83,3 % à l'itération 2 |
+| Docstring qui annonce un test inexistant | `find . -name "<nom_annoncé>*" -not -path "./.git/*"` — un filet de sécurité documenté mais absent est pire qu'un manque assumé |
+| Deux implémentations d'un même calcul financier | vérifier qu'un **test croisé** garantit leur convergence, pas seulement qu'elles convergent aujourd'hui |
 
 ## Invariants d'architecture à vérifier systématiquement
 

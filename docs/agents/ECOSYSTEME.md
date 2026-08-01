@@ -243,6 +243,24 @@ documents qui les nourrissent :
 | `agent-greenit` | `.claude/agents/agent-greenit.md` | actif |
 | `agent-produit` | `.claude/agents/agent-produit.md` | actif |
 
-Créés à l'itération 2. **Aucun n'a encore été exercé sur un cycle complet** :
-leur efficacité réelle sera constatée à l'itération suivante, et leurs prompts
-ajustés en conséquence (boucle 2).
+Créés à l'itération 2 (commit `4585a10`).
+
+### Enseignement de l'itération 2 (boucle 2 — à intégrer aux prompts)
+
+La revue de l'itération 2 a mis `agent-documentation` en **relance** :
+5/6 assertions = 83,3 %, sous la porte 97 %. Cause identifiée — **la
+documentation décrivait un instantané pris avant l'atterrissage d'un chantier
+parallèle de la même itération** (le cockpit était passé de 8 à 10 routes et de
+5 à 6 écrans entre le relevé et la remise).
+
+Ce n'est pas une inattention : c'est un **risque structurel du rôle de
+documentation en orchestration parallèle**. La règle qui en découle est
+désormais inscrite dans le prompt de `agent-documentation` :
+
+> **Re-vérifier chaque chiffre par une commande juste AVANT de rendre, pas au
+> moment où on le relève.** En orchestration parallèle, tout chiffre relevé en
+> début de tâche est périmé à la fin.
+
+Corollaire pour `agent-revue` : l'assertion « les chiffres cités correspondent à
+la réalité » doit être ré-exécutée **après** que tous les chantiers de
+l'itération ont atterri, pas au fil de l'eau.
