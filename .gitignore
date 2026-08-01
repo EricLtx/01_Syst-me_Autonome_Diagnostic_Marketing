@@ -12,3 +12,22 @@ dist/
 
 # Exports Kemana — artefacts de sortie J5, jamais versionnés (même esprit que G9)
 exports/
+
+# Grand livre d'usage API — source de vérité des coûts, recalculée, jamais versionnée
+api_usage.log
+
+# Verrou d'exécution de l'orchestrateur (Chantier CORE)
+*.lock
+.run.lock
+
+# Front-end (webapp) — dépendances et artefacts de build
+webapp/frontend/node_modules/
+webapp/frontend/dist/
+webapp/frontend/.vite/
+webapp/frontend/coverage/
+webapp/**/.env
+webapp/**/.env.local
+
+# Environnements & caches Python de la webapp
+webapp/backend/.venv/
+webapp/backend/__pycache__/
