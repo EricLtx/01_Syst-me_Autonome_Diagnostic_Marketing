@@ -1,0 +1,55 @@
+# dag_pipeline.yaml — le GRAPHE est une DONNÉE (Chantier CORE / Kemana-Flow).
+#
+# Ajouter, désactiver ou réordonner une étape = éditer CE fichier, jamais le
+# code de diagnostic/orchestrator.py. L'orchestrateur charge, valide, trie
+# topologiquement (départage alphabétique → ordre déterministe) puis exécute
+# SÉQUENTIELLEMENT (pas de parallélisme : l'incohérence export ∥ outreach a été
+# tranchée en faveur du séquentiel strict).
+#
+# Ordre topologique figé de la chaîne :
+#   preflight_gate  (bloquant GO/NO-GO)
+#     → discovery   (J4 — SERP + Apollo, ApiIO unique injectée)
+#       → diagnostic (J1 — seule transition agent : decouvert → diagnostique)
+#         → [PORTE HUMAINE : diagnostique → valide, dans Obsidian, HORS orchestrateur]
+#           → export        (J5 — fiches valide → liste Kemana, lecture seule)
+#             → usage_snapshot (J5 — agrégat api_usage.log → vault/90-Systeme/)
+#   outreach : déclaré mais enabled: false (J6, hors périmètre J+30).
+#
+# Champs par nœud :
+#   nom            : identifiant unique (clé du registre de runners).
+#   depends_on     : liste de noms de nœuds prérequis (arêtes du DAG).
+#   enabled        : false = nœud sauté (statut « desactive »).
+#   porte_humaine  : true = une validation humaine précède/suit ce nœud ;
+#                    l'orchestrateur ne franchit PAS cette porte lui-même.
+#   plafond_budget : optionnel, documentaire (le garde-fou réel = budgets ApiIO).
+
+version: 1
+
+noeuds:
+  - nom: preflight_gate
+    depends_on: []
+    enabled: true
+
+  - nom: discovery
+    depends_on: [preflight_gate]
+    enabled: true
+
+  - nom: diagnostic
+    depends_on: [discovery]
+    enabled: true
+
+  - nom: export
+    depends_on: [diagnostic]
+    enabled: true
+    # La transition diagnostique → valide est HUMAINE (Obsidian). L'export ne
+    # sort que les fiches déjà validées : la porte humaine le précède.
+    porte_humaine: true
+
+  - nom: usage_snapshot
+    depends_on: [export]
+    enabled: true
+
+  - nom: outreach
+    depends_on: [export]
+    enabled: false        # J6 — activer seulement après validation juridique CASL/nLPD/RGPD
+    porte_humaine: true

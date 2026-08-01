@@ -127,29 +127,34 @@ def _enrichir_existants(
 # Point d'entrée principal
 # ---------------------------------------------------------------------------
 
-def main() -> None:
-    parser = argparse.ArgumentParser(
-        description="Agent de découverte J4 — SERP + Apollo → fiches decouvert"
-    )
-    parser.add_argument("--icp", required=True, metavar="ICP_ID",
-                        help="Identifiant ICP (ex : persona1-quebec)")
-    parser.add_argument("--sans-contact", action="store_true",
-                        help="Phase 1a uniquement — zéro crédit Apollo")
-    parser.add_argument("--dry-run", action="store_true",
-                        help="Affiche les candidates, n'écrit RIEN dans le vault")
-    parser.add_argument("--enrichir-existants", action="store_true",
-                        help="Rejoue la phase 1b sur les fiches sans contact")
-    parser.add_argument("--vault", default=str(_VAULT_PAR_DEFAUT), metavar="CHEMIN",
-                        help="Chemin du vault Obsidian")
-    args = parser.parse_args()
+def run(
+    *,
+    icp_id: str,
+    sans_contact: bool = False,
+    dry_run: bool = False,
+    enrichir_existants: bool = False,
+    vault: str | Path = _VAULT_PAR_DEFAUT,
+    api_io: ApiIO | None = None,
+) -> None:
+    """Point d'entrée appelable (injectable) de la découverte J4.
 
-    icp = load_icp(args.icp)
-    pricing = load_pricing()
-    api_io = ApiIO(pricing, _LEDGER_PATH, cache_dir=_CACHE_DIR)
-    vault_io = VaultIO(Path(args.vault))
+    Pourquoi ce paramètre `api_io` : l'orchestrateur Kemana-Flow crée UNE seule
+    instance ApiIO (budgets partagés, grand livre unique) et l'injecte ici. En
+    usage autonome (`api_io=None`), on fabrique le bus AVEC les budgets du YAML —
+    câblage `budgets=` que le défaut AS-IS omettait (dépense non bornée).
+    La logique métier de découverte reste intégralement dans ce module.
+    """
+    icp = load_icp(icp_id)
+    if api_io is None:
+        pricing = load_pricing()
+        api_io = ApiIO(
+            pricing, _LEDGER_PATH, cache_dir=_CACHE_DIR,
+            budgets=(pricing.get("budgets") or None),
+        )
+    vault_io = VaultIO(Path(vault))
 
-    if args.enrichir_existants:
-        _enrichir_existants(icp, api_io, vault_io, dry_run=args.dry_run)
+    if enrichir_existants:
+        _enrichir_existants(icp, api_io, vault_io, dry_run=dry_run)
         return
 
     # --- Phase 1a : découverte SERP ----------------------------------------
@@ -162,7 +167,7 @@ def main() -> None:
 
     print(f"Candidates trouvées : {len(candidates)}")
 
-    if args.dry_run:
+    if dry_run:
         for c in candidates:
             print(f"  {c.nom:45s}  {c.site_web}")
         print("[DRY-RUN] Aucune fiche écrite dans le vault.")
@@ -170,7 +175,7 @@ def main() -> None:
 
     # --- Phase 1b : enrichissement Apollo + écriture vault -----------------
     enrichment: PersonEnrichment | None = (
-        None if args.sans_contact
+        None if sans_contact
         else PersonEnrichment(api_io=api_io, icp=icp)
     )
 
@@ -207,6 +212,32 @@ def main() -> None:
     print(
         f"Fiches créées : {nb_crees} | Doublons ignorés : {nb_doublons} | "
         f"Enrichies : {nb_enrichis} | Erreurs : {nb_erreurs}"
+    )
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Agent de découverte J4 — SERP + Apollo → fiches decouvert"
+    )
+    parser.add_argument("--icp", required=True, metavar="ICP_ID",
+                        help="Identifiant ICP (ex : persona1-quebec)")
+    parser.add_argument("--sans-contact", action="store_true",
+                        help="Phase 1a uniquement — zéro crédit Apollo")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="Affiche les candidates, n'écrit RIEN dans le vault")
+    parser.add_argument("--enrichir-existants", action="store_true",
+                        help="Rejoue la phase 1b sur les fiches sans contact")
+    parser.add_argument("--vault", default=str(_VAULT_PAR_DEFAUT), metavar="CHEMIN",
+                        help="Chemin du vault Obsidian")
+    args = parser.parse_args()
+
+    # Usage autonome : run() fabrique le bus AVEC budgets (câblage AS-IS corrigé).
+    run(
+        icp_id=args.icp,
+        sans_contact=args.sans_contact,
+        dry_run=args.dry_run,
+        enrichir_existants=args.enrichir_existants,
+        vault=args.vault,
     )
 
 

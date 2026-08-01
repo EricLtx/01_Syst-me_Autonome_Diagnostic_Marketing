@@ -255,6 +255,11 @@ def _check_garde_fous_bus() -> list[Check]:
         _MODULE_DIR.parent / "run_export.py",
         _MODULE_DIR.parent / "run_usage.py",
         _MODULE_DIR.parent / "run_preflight.py",
+        # Chantier CORE : l'orchestrateur et sa CLI ne touchent jamais le réseau
+        # eux-mêmes (c'est api_io qui le fait). Le garde-fou AST doit donc aussi
+        # leur interdire tout import requests/anthropic au niveau module.
+        _MODULE_DIR / "orchestrator.py",
+        _MODULE_DIR.parent / "run_pipeline.py",
     ]
     interdits = {"requests", "anthropic"}
     checks: list[Check] = []

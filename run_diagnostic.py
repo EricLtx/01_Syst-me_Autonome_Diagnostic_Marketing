@@ -35,7 +35,15 @@ from diagnostic.pipeline import DiagnosticPipeline
 DEFAULT_VAULT = Path(__file__).resolve().parent / "vault"
 
 
-def _build_pipeline() -> DiagnosticPipeline:
+def _build_pipeline(api_io=None) -> DiagnosticPipeline:
+    """Construit le pipeline J1.
+
+    `api_io` : injection de l'UNIQUE bus I/O. L'orchestrateur Kemana-Flow passe
+    ici la même instance ApiIO que la découverte (budgets partagés, grand livre
+    unique) ; le défaut AS-IS était qu'aucun ApiIO n'était jamais créé côté
+    diagnostic. DiagnosticPipeline propage `api_io` dans ses collecteurs et sa
+    synthèse. Sans injection (défaut) le comportement J1 hors-ligne est inchangé.
+    """
     return DiagnosticPipeline(
         collectors=[
             WebsiteCollector(),
@@ -46,6 +54,24 @@ def _build_pipeline() -> DiagnosticPipeline:
         ],
         rubrique=load_rubrique(),
         knowledge=load_knowledge(),
+        api_io=api_io,
+    )
+
+
+def _build_api_io():
+    """Fabrique l'unique bus I/O métré, budgets inclus (config = données).
+
+    Import local d'ApiIO : garde le module léger et hors du chemin d'import de
+    `requests`/`anthropic` au niveau module.
+    """
+    from diagnostic.api_io import ApiIO
+    from diagnostic.config import load_pricing
+    pricing = load_pricing()
+    return ApiIO(
+        pricing,
+        Path("api_usage.log"),
+        cache_dir=Path(".cache/api_io"),
+        budgets=(pricing.get("budgets") or None),
     )
 
 
@@ -68,13 +94,16 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # UNE seule instance ApiIO, injectée dans le pipeline (câblage AS-IS corrigé).
+    api_io = _build_api_io()
+
     if args.out == "vault":
         # Import ici pour ne pas alourdir le mode standard
         from diagnostic.vault_runner import run_vault_mode
         vault_path = Path(args.vault)
         print(f"Vault : {vault_path.resolve()}")
         print("Traitement des fiches 'decouvert'...\n")
-        result = run_vault_mode(vault_path, _build_pipeline())
+        result = run_vault_mode(vault_path, _build_pipeline(api_io))
         for nom in result["ok"]:
             print(f"  ✓ {nom}")
         for err in result["erreurs"]:
@@ -87,7 +116,7 @@ def main() -> None:
             parser.error("--nom et --url sont requis en mode --out json (défaut)")
 
         company = Company(nom=args.nom, url=args.url, region=args.region)
-        diag = _build_pipeline().run(company)
+        diag = _build_pipeline(api_io).run(company)
 
         if args.json:
             print(diag.to_json())
