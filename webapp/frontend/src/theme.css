@@ -1,0 +1,81 @@
+/* theme.css — tokens du design system "micro-ordinateur / journal d'audit".
+   Neutres à léger biais cyan, accent teal-signal. Thème clair + sombre :
+   prefers-color-scheme par défaut, surchargé par [data-theme] sur :root. */
+
+:root {
+  --ground: #f6f7f9;
+  --panel: #ffffff;
+  --panel2: #fbfcfd;
+  --ink: #12161c;
+  --muted: #59616e;
+  --line: #e2e6ec;
+  --accent: #0b6b7a;
+  --accent-soft: #0b6b7a18;
+  --ok: #1e7a4d;
+  --ok-soft: #1e7a4d18;
+  --warn: #9a6b00;
+  --warn-soft: #9a6b0018;
+  --crit: #b23a3a;
+  --crit-soft: #b23a3a18;
+  --shadow: 0 1px 2px #12161c0a, 0 8px 24px #12161c0d;
+  --radius: 12px;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --ground: #0d1015;
+    --panel: #151a21;
+    --panel2: #11161c;
+    --ink: #e7ecf3;
+    --muted: #94a0ae;
+    --line: #232a33;
+    --accent: #34c6d8;
+    --accent-soft: #34c6d820;
+    --ok: #3fb27a;
+    --ok-soft: #3fb27a22;
+    --warn: #d6a43a;
+    --warn-soft: #d6a43a22;
+    --crit: #e06b6b;
+    --crit-soft: #e06b6b22;
+    --shadow: 0 1px 2px #0006, 0 10px 30px #0007;
+  }
+}
+
+:root[data-theme="light"] {
+  --ground: #f6f7f9;
+  --panel: #ffffff;
+  --panel2: #fbfcfd;
+  --ink: #12161c;
+  --muted: #59616e;
+  --line: #e2e6ec;
+  --accent: #0b6b7a;
+  --accent-soft: #0b6b7a18;
+  --ok: #1e7a4d;
+  --ok-soft: #1e7a4d18;
+  --warn: #9a6b00;
+  --warn-soft: #9a6b0018;
+  --crit: #b23a3a;
+  --crit-soft: #b23a3a18;
+  --shadow: 0 1px 2px #12161c0a, 0 8px 24px #12161c0d;
+}
+
+:root[data-theme="dark"] {
+  --ground: #0d1015;
+  --panel: #151a21;
+  --panel2: #11161c;
+  --ink: #e7ecf3;
+  --muted: #94a0ae;
+  --line: #232a33;
+  --accent: #34c6d8;
+  --accent-soft: #34c6d820;
+  --ok: #3fb27a;
+  --ok-soft: #3fb27a22;
+  --warn: #d6a43a;
+  --warn-soft: #d6a43a22;
+  --crit: #e06b6b;
+  --crit-soft: #e06b6b22;
+  --shadow: 0 1px 2px #0006, 0 10px 30px #0007;
+}
