@@ -20,6 +20,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from diagnostic.collectors._places import reponse_exploitable
 from diagnostic.collectors.base import Collector
 from diagnostic.models import Company
 
@@ -43,6 +44,13 @@ class ReviewsCollector(Collector):
                 fiche=company.nom,
                 cache_key=f"places:{query}",
             )
+            # Échec technique (clé absente → REQUEST_DENIED, quota, erreur) :
+            # HTTP 200 + results vide. Le compter comme « 0 avis » fabriquerait
+            # une faille haute à partir d'un problème d'authentification.
+            if not reponse_exploitable(search):
+                return {"count": None, "avg": None,
+                        "repond_aux_avis": None, "date_dernier_avis": None}
+
             results = search.get("results", [])
             if not results:
                 return {"count": 0, "avg": None, "repond_aux_avis": None, "date_dernier_avis": None}

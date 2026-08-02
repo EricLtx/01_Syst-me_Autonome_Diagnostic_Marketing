@@ -40,8 +40,24 @@ class TestSocialPassif:
         result = c.collect(Company(nom="Test", url=""))
         assert result["plateformes_mentionnees"] == ["facebook", "linkedin"]
 
-    def test_sans_website_signals_liste_vide(self):
+    def test_sans_website_signals_retourne_none_pas_liste_vide(self):
+        """Site non consulté → None (inconnu), jamais [] (observation négative).
+
+        Ce test assertait auparavant `== []`. Il verrouillait un défaut : une
+        liste vide signifie « j'ai regardé le site, il ne mentionne aucun
+        réseau social » — une observation. Or quand `_website_signals` est
+        absent, le site n'a JAMAIS pu être consulté. Confondre les deux faisait
+        émettre la faille « Aucune présence sociale reliée depuis le site »
+        contre une entreprise dont le site était simplement hors ligne.
+        """
         c = SocialCollector()
+        result = c.collect(Company(nom="Test", url=""))
+        assert result["plateformes_mentionnees"] is None
+
+    def test_site_consulte_sans_lien_social_reste_une_liste_vide(self):
+        """Contre-épreuve : [] doit rester une observation négative légitime."""
+        c = SocialCollector()
+        c._website_signals = {"social_links": []}
         result = c.collect(Company(nom="Test", url=""))
         assert result["plateformes_mentionnees"] == []
 
@@ -224,7 +240,7 @@ class TestRepond:
 
         def fake_api_call(fournisseur, endpoint, fn, **kwargs):
             if endpoint == "text_search":
-                return {"results": [{"place_id": "abc", "rating": 4.5, "user_ratings_total": 20, "business_status": "OPERATIONAL"}]}
+                return {"status": "OK", "results": [{"place_id": "abc", "rating": 4.5, "user_ratings_total": 20, "business_status": "OPERATIONAL"}]}
             if endpoint == "place_details":
                 return {"result": {"reviews": [
                     {"rating": 5, "text": "Super", "time": 1700000000, "owner_answer": {"text": "Merci !"}},
@@ -242,7 +258,7 @@ class TestRepond:
 
         def fake_api_call(fournisseur, endpoint, fn, **kwargs):
             if endpoint == "text_search":
-                return {"results": [{"place_id": "abc", "rating": 3.8, "user_ratings_total": 5}]}
+                return {"status": "OK", "results": [{"place_id": "abc", "rating": 3.8, "user_ratings_total": 5}]}
             if endpoint == "place_details":
                 return {"result": {"reviews": [
                     {"rating": 4, "text": "Bien", "time": 1700000000},
@@ -265,7 +281,7 @@ class TestRepond:
 
         def fake_api_call(fournisseur, endpoint, fn, **kwargs):
             if endpoint == "text_search":
-                return {"results": [{"place_id": "xyz", "rating": 4.2, "user_ratings_total": 87}]}
+                return {"status": "OK", "results": [{"place_id": "xyz", "rating": 4.2, "user_ratings_total": 87}]}
             if endpoint == "place_details":
                 return {"result": {"reviews": []}}
             return fn()
@@ -280,7 +296,7 @@ class TestRepond:
         c = ReviewsCollector(api_io=io)
 
         def fake_api_call(fournisseur, endpoint, fn, **kwargs):
-            return {"results": []}
+            return {"status": "ZERO_RESULTS", "results": []}
 
         io.call = fake_api_call
         result = c.collect(Company(nom="Inconnue", url=""))
@@ -293,17 +309,17 @@ class TestRepond:
 
 class TestGbpParse:
     def test_verified_true_si_operational(self):
-        data = {"results": [{"business_status": "OPERATIONAL", "photos": [{"photo_reference": "abc"}]}]}
+        data = {"status": "OK", "results": [{"business_status": "OPERATIONAL", "photos": [{"photo_reference": "abc"}]}]}
         assert GbpCollector._parse_place(data) == {"verified": True, "has_photos": True}
 
     def test_verified_false_si_closed(self):
-        data = {"results": [{"business_status": "CLOSED_PERMANENTLY", "photos": []}]}
+        data = {"status": "OK", "results": [{"business_status": "CLOSED_PERMANENTLY", "photos": []}]}
         r = GbpCollector._parse_place(data)
         assert r["verified"] is False
         assert r["has_photos"] is False
 
     def test_aucun_resultat_retourne_false(self):
-        assert GbpCollector._parse_place({"results": []}) == {"verified": False, "has_photos": False}
+        assert GbpCollector._parse_place({"status": "ZERO_RESULTS", "results": []}) == {"verified": False, "has_photos": False}
 
     def test_stub_sans_api_io(self):
         c = GbpCollector()
@@ -392,7 +408,9 @@ class TestPipelineInjection:
         )
         diag = pipeline.run(Company(nom="Test", url=""))
         assert diag.signaux["seo"]["local_keywords"] is None
-        assert diag.signaux["social"]["plateformes_mentionnees"] == []
+        # None = non observé : sans WebsiteCollector, le site n'a jamais été
+        # consulté, donc rien ne peut être affirmé de sa présence sociale.
+        assert diag.signaux["social"]["plateformes_mentionnees"] is None
 
     def test_seo_local_keywords_true_avec_region_dans_titre(self):
         """Intégration : company.region présente dans le titre → local_keywords=True."""
@@ -412,3 +430,78 @@ class TestPipelineInjection:
         with patch("requests.get", return_value=resp):
             diag = pipeline.run(Company(nom="Test", url="https://exemple.ca", region="Montréal, QC"))
         assert diag.signaux["seo"]["local_keywords"] is True
+
+
+# ---------------------------------------------------------------------------
+# RÉGRESSION — échec technique Places ≠ observation
+#
+# L'API Google Places répond HTTP 200 avec `results: []` quand la clé est
+# absente (REQUEST_DENIED), le quota dépassé, ou la requête invalide. Ces
+# réponses étaient interprétées comme « aucune fiche d'établissement », ce qui
+# fabriquait deux failles de gravité HAUTE pour toute entreprise diagnostiquée
+# dans l'état actuel du dépôt (aucune clé disponible) — dont celle qui
+# alimentait l'accroche commerciale.
+#
+# Ces tests exercent le CHEMIN DE PRODUCTION RÉEL (api_io construit et injecté),
+# pas des collecteurs isolés : c'est là que le défaut vivait, et les tests
+# unitaires précédents ne le voyaient pas.
+# ---------------------------------------------------------------------------
+
+class TestPlacesEchecTechniqueNestPasUneObservation:
+    def test_reponse_exploitable_distingue_les_statuts(self):
+        from diagnostic.collectors._places import reponse_exploitable
+
+        assert reponse_exploitable({"status": "OK", "results": [{}]}) is True
+        assert reponse_exploitable({"status": "ZERO_RESULTS", "results": []}) is True
+        for statut in ("REQUEST_DENIED", "OVER_QUERY_LIMIT", "INVALID_REQUEST",
+                       "UNKNOWN_ERROR"):
+            assert reponse_exploitable({"status": statut, "results": []}) is False, statut
+        # Réponse malformée ou sans statut : on s'abstient.
+        assert reponse_exploitable({"results": []}) is False
+        assert reponse_exploitable(None) is False
+
+    def test_gbp_request_denied_donne_none_pas_false(self):
+        deny = {"status": "REQUEST_DENIED", "results": [],
+                "error_message": "The provided API key is invalid."}
+        assert GbpCollector._parse_place(deny) == {"verified": None, "has_photos": None}
+
+    def test_zero_results_reste_une_observation_negative(self):
+        """Contre-épreuve : une vraie absence de fiche doit rester un échec."""
+        vide = {"status": "ZERO_RESULTS", "results": []}
+        assert GbpCollector._parse_place(vide) == {"verified": False, "has_photos": False}
+
+    def test_chemin_de_production_sans_cle_ne_fabrique_aucune_faille(self):
+        """Assemblage réel : _build_pipeline(api_io) + Places qui refuse la clé.
+
+        C'est le test qui manquait. Les précédents construisaient les
+        collecteurs sans api_io (donc stub None) ou fabriquaient les signaux à
+        la main — ils ne pouvaient pas voir le défaut, qui n'existait que
+        lorsqu'un api_io était réellement injecté et que l'appel réseau partait.
+        """
+        import run_diagnostic
+        from diagnostic.api_io import ApiIO
+
+        deny = MagicMock()
+        deny.json.return_value = {"status": "REQUEST_DENIED", "results": []}
+        deny.status_code = 200
+        deny.text = ""
+        deny.url = "https://maps.googleapis.com/"
+        deny.headers.get = lambda k, default=None: default
+
+        with patch("requests.get", return_value=deny):
+            api_io = ApiIO({"fournisseurs": {}}, Path("/tmp/_ledger_test.jsonl"))
+            pipeline = run_diagnostic._build_pipeline(api_io=api_io)
+            diag = pipeline.run(Company(nom="Test HVAC", url="https://exemple.test"))
+
+        assert diag.signaux["gbp"]["verified"] is None
+        assert diag.signaux["reviews"]["count"] is None
+        assert diag.scores["presence_locale"] is None
+        assert diag.scores["avis"] is None
+
+        preuves = " | ".join(f.preuve for f in diag.failles)
+        assert "établissement" not in preuves.lower(), (
+            f"faille fabriquée depuis un refus d'authentification : {preuves}"
+        )
+        assert "avis" not in preuves.lower(), (
+            f"faille fabriquée depuis un refus d'authentification : {preuves}"
+        )

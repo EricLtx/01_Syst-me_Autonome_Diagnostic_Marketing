@@ -16,6 +16,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from diagnostic.collectors._places import reponse_exploitable
 from diagnostic.collectors.base import Collector
 from diagnostic.models import Company
 
@@ -56,6 +57,12 @@ class GbpCollector(Collector):
 
     @staticmethod
     def _parse_place(data: dict) -> dict:
+        # Une réponse non exploitable (REQUEST_DENIED sans clé, quota, erreur)
+        # arrive en HTTP 200 avec `results: []`. La compter comme « pas de
+        # fiche » fabriquerait une faille de gravité haute à partir d'un échec
+        # d'authentification. On s'abstient : cf. collectors/_places.py.
+        if not reponse_exploitable(data):
+            return {"verified": None, "has_photos": None}
         results = data.get("results", [])
         if not results:
             return {"verified": False, "has_photos": False}

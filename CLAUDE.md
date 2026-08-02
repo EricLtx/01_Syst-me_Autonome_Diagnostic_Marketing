@@ -432,7 +432,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
 
-## État des tests (555 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (560 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -448,7 +448,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_integration_vault.py` | Pipeline complet → fiche + rapport + journal | 7 |
 | `test_api_schema.py` | LedgerEntry, compute_cout | 20 |
 | `test_api_io.py` | ApiIO call/cache/budget/mesureur/garde-fou/câblage | 31 |
-| `test_collectors_phase_d.py` | §9.9 social passif, derniere_maj, repond_aux_avis, seo, injection | 33 |
+| `test_collectors_phase_d.py` | §9.9 social passif, derniere_maj, repond_aux_avis, seo, injection | 38 |
 | `test_icp_schema.py` | §7.1 IcpConfig + §7.12 FicheProspect rétro-compat | 19 |
 | `test_discovery.py` | §7.2-4 + §7.7 DiscoveryCollector (SERP, filtres, dédup) | 36 |
 | `test_enrichment.py` | §7.6 + §7.8 PersonEnrichment + Contact minimisation | 16 |

@@ -24,7 +24,15 @@ class SocialCollector(Collector):
         self._website_signals: dict | None = None
 
     def collect(self, company: Company) -> dict[str, Any]:
+        # Trois états, comme le moteur de scoring :
+        #   liste non vide → des plateformes ont été trouvées ;
+        #   liste vide     → le site A ÉTÉ CONSULTÉ et n'en mentionne aucune
+        #                    (observation négative légitime) ;
+        #   None           → le site n'a pas pu être consulté (injoignable),
+        #                    donc on ne sait RIEN de sa présence sociale.
+        # Confondre les deux derniers cas fabriquerait une faille « aucune
+        # présence sociale » pour une entreprise dont le site était simplement
+        # hors ligne au moment de la collecte.
         if self._website_signals and "social_links" in self._website_signals:
-            plateformes = list(self._website_signals["social_links"])
-            return {"plateformes_mentionnees": plateformes}
-        return {"plateformes_mentionnees": []}
+            return {"plateformes_mentionnees": list(self._website_signals["social_links"])}
+        return {"plateformes_mentionnees": None}

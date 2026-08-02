@@ -99,11 +99,20 @@ def _accroche_depuis_gaps(gaps: list[Gap]) -> str:
 
 def _synthese_repli(company: Company, scores: dict[str, float], gaps: list[Gap]) -> tuple[str, str]:
     """Version 100 % déterministe : fonctionne hors-ligne, sans LLM."""
-    glob = scores.get("global", 0)
+    # Ce texte part dans le rapport livré et dans la sortie console : il ne doit
+    # ni afficher « None/100 », ni laisser fuiter une clé technique. Les clés
+    # préfixées « _ » (ex. _couverture) sont des métadonnées du moteur, pas des
+    # dimensions de la rubrique.
+    glob = scores.get("global")
+    entete_score = (
+        "Score global non calculé : aucune dimension n'a pu être observée."
+        if glob is None
+        else f"Score global de maturité digitale : **{glob}/100**."
+    )
     lignes = [
         f"# Mini-audit de marque — {company.nom}",
         "",
-        f"Score global de maturité digitale : **{glob}/100**.",
+        entete_score,
         "",
         "## Points de friction prioritaires",
     ]
@@ -111,10 +120,24 @@ def _synthese_repli(company: Company, scores: dict[str, float], gaps: list[Gap])
         lignes.append(f"- ({g.gravite}) {g.preuve}")
     if not gaps:
         lignes.append("- Aucun point bloquant détecté sur les dimensions mesurées.")
+
     lignes += ["", "## Détail par dimension"]
     for dim, val in scores.items():
-        if dim != "global":
-            lignes.append(f"- {dim} : {val}/100")
+        if dim == "global" or dim.startswith("_"):
+            continue
+        # Une dimension non observée est annoncée comme telle : la ramener à 0
+        # affirmerait un fait jamais constaté.
+        lignes.append(
+            f"- {dim} : non observé" if val is None else f"- {dim} : {val}/100"
+        )
+
+    couverture = scores.get("_couverture")
+    if couverture is not None:
+        lignes += [
+            "",
+            f"*Couverture du diagnostic : {round(couverture * 100)} % de la "
+            f"rubrique a pu être observée.*",
+        ]
     return _accroche_depuis_gaps(gaps), "\n".join(lignes)
 
 
