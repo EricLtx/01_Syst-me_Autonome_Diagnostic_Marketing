@@ -87,15 +87,47 @@ def test_pipeline_score_coherent_avec_html():
     assert diag.scores["site_web"] > 0, "Le site HTTPS avec titre et contact doit scorer"
 
 
-def test_pipeline_stubs_signalent_zero_pour_gbp_avis():
-    """Les stubs GBP/avis retournent None → la rubrique génère des failles."""
+def test_pipeline_stubs_ne_fabriquent_aucune_faille():
+    """Un signal NON OBSERVÉ ne produit ni faille ni score (invariant J1 n°4).
+
+    Ce test assertait auparavant l'inverse : « le stub GBP DOIT produire une
+    faille presence_locale ». Il verrouillait un défaut, pas un comportement.
+    Sans clé Google Places, gbp/reviews renvoient None ; le moteur émettait
+    alors des failles dont le libellé avouait « à confirmer en J3 », et les
+    dimensions presence_locale + avis (45 % de la pondération) valaient 0/100
+    pour tous les prospects. Mesuré : trois entreprises radicalement
+    différentes recevaient la MÊME accroche, et une entreprise au site
+    irréprochable plafonnait à 27,5/100.
+
+    « Je n'ai pas regardé » n'est pas « c'est mauvais » : c'est la règle que
+    ce test protège désormais.
+    """
     company = Company(nom="Test HVAC", url="https://exemple-hvac.ca")
     with patch("requests.get", return_value=_fake_response()):
         diag = _make_pipeline().run(company)
 
     dims_failles = {f.dimension for f in diag.failles}
-    assert "presence_locale" in dims_failles, "GBP stub doit produire une faille presence_locale"
-    assert "avis" in dims_failles, "Reviews stub doit produire une faille avis"
+    assert "presence_locale" not in dims_failles, (
+        "gbp est en mode stub (None) : aucune faille ne doit être affirmée"
+    )
+    assert "avis" not in dims_failles, (
+        "reviews est en mode stub (None) : aucune faille ne doit être affirmée"
+    )
+
+    # Une dimension non observée n'a pas de score — elle ne vaut pas 0.
+    assert diag.scores["presence_locale"] is None
+    assert diag.scores["avis"] is None
+
+    # ... et elle sort du calcul global au lieu de le tirer vers le bas.
+    assert diag.scores["_couverture"] < 1.0
+    assert diag.scores["global"] is not None
+
+    # Aucune faille émise ne peut porter une mention d'incertitude : une
+    # faille est une affirmation adossée à un fait observé.
+    for f in diag.failles:
+        assert "confirmer" not in f.preuve.lower(), (
+            f"Faille non adossée à un fait observé : {f.preuve!r}"
+        )
 
 
 def test_collecteur_echec_isole():

@@ -6,44 +6,105 @@
 # rubric_persona2.yaml et tu changes les dimensions/poids/checks.
 # Tu ne touches JAMAIS scoring.py.
 #
-# Poids des dimensions = 100 au total.
-# Chaque "check" : signal observé, opérateur, points si réussi, message de faille.
-# Opérateurs disponibles : is_true | gte | lte | exists
+# CE QUE MESURE CETTE RUBRIQUE
+# ----------------------------
+# Elle ne note pas une entreprise « en général » : elle mesure un BESOIN.
+# Un score BAS = un prospect CHAUD (beaucoup à corriger, donc beaucoup de
+# valeur à apporter). Un score HAUT = une entreprise qui n'a pas besoin de
+# la consultante. C'est l'inverse d'une note de satisfaction, et c'est
+# volontaire.
+#
+# Corollaire à garder en tête : le score se lit TOUJOURS avec sa couverture
+# (`_couverture`, publiée par le moteur). Un 30/100 observé à 100 % est un
+# prospect qualifié ; un 30/100 observé à 40 % est une hypothèse.
+#
+# LES POIDS SONT LE JUGEMENT MÉTIER DE LA CONSULTANTE
+# ---------------------------------------------------
+# Ils sont faits pour être ajustés par elle, pas par un développeur. Total = 100.
+#
+# CHAQUE CHECK DÉCLARE SA GRAVITÉ
+# --------------------------------
+# `gravite: haute | moyenne | basse` — c'est un jugement commercial explicite.
+# Elle n'est plus déduite du poids relatif : cette déduction dépendait du
+# nombre de checks voisins et classait « Site web inaccessible » en `moyenne`
+# parce qu'il cohabitait avec cinq autres checks.
+# La faille `haute` la mieux placée devient l'accroche envoyée au prospect
+# (`signal_chaud`) : une gravité mal réglée se voit donc directement dans
+# le message commercial.
+#
+# UN SIGNAL NON OBSERVÉ NE PRODUIT AUCUNE FAILLE
+# -----------------------------------------------
+# Si un collecteur est en mode dégradé (pas de clé API, source injoignable),
+# son signal vaut `None` et le moteur s'abstient : ni point, ni dénominateur,
+# ni faille. C'est pourquoi aucun libellé de `gap` ci-dessous ne porte plus
+# la mention « à confirmer » : un gap n'est émis que s'il a été OBSERVÉ.
+#
+# Opérateurs disponibles : is_true | gte | lte | exists | non_vide
 
 persona: "Détaillant / installateur HVAC (climatisation, chauffage, PAC)"
 
 dimensions:
 
+  # -------------------------------------------------------------------
+  # Le site est la vitrine. Un propriétaire compare trois soumissions et
+  # écarte en 90 secondes celui qui ne le rassure pas.
+  # -------------------------------------------------------------------
   site_web:
     poids: 25
     checks:
-      - { signal: website.reachable,          op: is_true, points: 20, gap: "Site web inaccessible ou inexistant" }
-      - { signal: website.https,              op: is_true, points: 10, gap: "Pas de HTTPS — signal de confiance manquant" }
-      - { signal: website.has_viewport,       op: is_true, points: 15, gap: "Site non optimisé pour mobile" }
-      - { signal: website.has_meta_description,op: is_true, points: 10, gap: "Métadonnées SEO de base absentes" }
-      - { signal: website.mentions_offre,     op: is_true, points: 25, gap: "L'offre (clim / chauffage / PAC) n'est pas clairement présentée" }
-      - { signal: website.has_contact,        op: is_true, points: 20, gap: "Pas de moyen de contact visible" }
+      - { signal: website.reachable,           op: is_true, points: 20, gravite: haute,   gap: "Site web inaccessible ou inexistant" }
+      - { signal: website.https,               op: is_true, points: 10, gravite: moyenne, gap: "Pas de HTTPS — signal de confiance manquant" }
+      # Le mobile n'est pas un confort : la recherche d'un installateur se
+      # fait au téléphone, souvent en urgence (panne de chauffage).
+      - { signal: website.has_viewport,        op: is_true, points: 15, gravite: haute,   gap: "Site non optimisé pour mobile" }
+      - { signal: website.has_meta_description, op: is_true, points: 10, gravite: basse,  gap: "Métadonnées SEO de base absentes" }
+      - { signal: website.mentions_offre,      op: is_true, points: 25, gravite: haute,   gap: "L'offre (clim / chauffage / PAC) n'est pas clairement présentée" }
+      - { signal: website.has_contact,         op: is_true, points: 20, gravite: haute,   gap: "Pas de moyen de contact visible" }
 
+  # -------------------------------------------------------------------
+  # Palier 1 (Google Places). Sans clé API, ces signaux valent None et la
+  # dimension sort proprement du calcul au lieu de le fausser.
+  # -------------------------------------------------------------------
   presence_locale:
-    poids: 25
+    poids: 20
     checks:
-      - { signal: gbp.verified,   op: is_true, points: 60, gap: "Fiche Google Business non vérifiée (à confirmer en J3)" }
-      - { signal: gbp.has_photos, op: is_true, points: 40, gap: "Pas de photos sur la fiche locale (à confirmer en J3)" }
+      - { signal: gbp.verified,    op: is_true, points: 60, gravite: haute,   gap: "Fiche d'établissement non vérifiée" }
+      - { signal: gbp.has_photos,  op: is_true, points: 40, gravite: moyenne, gap: "Aucune photo sur la fiche d'établissement" }
 
+  # -------------------------------------------------------------------
+  # La preuve sociale décide de l'appel. `repond_aux_avis` est déjà collecté
+  # par reviews.py et n'était pas exploité : c'est un signal de négligence
+  # très discriminant, et il ne coûte aucun appel supplémentaire.
+  # -------------------------------------------------------------------
   avis:
     poids: 20
     checks:
-      - { signal: reviews.count, op: gte, value: 10,  points: 50, gap: "Moins de 10 avis — preuve sociale faible (à confirmer en J3)" }
-      - { signal: reviews.avg,   op: gte, value: 4.0, points: 50, gap: "Note moyenne sous 4,0 (à confirmer en J3)" }
+      - { signal: reviews.count,          op: gte, value: 10,  points: 40, gravite: haute,   gap: "Moins de 10 avis — preuve sociale faible" }
+      - { signal: reviews.avg,            op: gte, value: 4.0, points: 40, gravite: haute,   gap: "Note moyenne sous 4,0" }
+      - { signal: reviews.repond_aux_avis, op: is_true, points: 20, gravite: moyenne, gap: "Les avis clients restent sans réponse" }
 
   seo_local:
     poids: 15
     checks:
-      - { signal: website.has_title,    op: is_true, points: 40, gap: "Balise <title> absente ou vide" }
-      - { signal: seo.local_keywords,   op: is_true, points: 60, gap: "Pas de mots-clés géolocalisés détectés (à confirmer en J3)" }
+      - { signal: website.has_title,   op: is_true, points: 40, gravite: moyenne, gap: "Balise <title> absente ou vide" }
+      - { signal: seo.local_keywords,  op: is_true, points: 60, gravite: haute,   gap: "Aucun mot-clé géolocalisé détecté" }
 
   identite_visuelle:
-    poids: 15
+    poids: 10
     checks:
-      - { signal: website.has_logo,    op: is_true, points: 50, gap: "Pas de logo clairement identifiable" }
-      - { signal: website.image_count, op: gte, value: 3, points: 50, gap: "Très peu de visuels — identité de marque pauvre" }
+      - { signal: website.has_logo,    op: is_true,            points: 50, gravite: moyenne, gap: "Pas de logo clairement identifiable" }
+      - { signal: website.image_count, op: gte, value: 3,      points: 50, gravite: basse,   gap: "Très peu de visuels — identité de marque pauvre" }
+
+  # -------------------------------------------------------------------
+  # DIMENSION D'ENTRETIEN — le signal de besoin le plus honnête.
+  # Une entreprise dont le site n'a pas bougé depuis des années n'a pas un
+  # problème d'esthétique : elle a cessé d'investir dans sa marque. C'est
+  # exactement le prospect que la consultante cherche.
+  # Les deux signaux sont DÉJÀ collectés (website.py, social.py) et étaient
+  # jetés : coût API marginal nul.
+  # -------------------------------------------------------------------
+  entretien:
+    poids: 10
+    checks:
+      - { signal: website.fraicheur_mois,           op: lte, value: 18, points: 60, gravite: haute,   gap: "Site sans mise à jour depuis plus de 18 mois" }
+      - { signal: social.plateformes_mentionnees,   op: non_vide,       points: 40, gravite: moyenne, gap: "Aucune présence sociale reliée depuis le site" }

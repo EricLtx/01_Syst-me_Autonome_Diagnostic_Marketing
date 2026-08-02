@@ -19,8 +19,12 @@ def diagnostic_to_fiche(diag: Diagnostic, fiche: FicheProspect) -> FicheProspect
     car le chemin du fichier n'est connu qu'après l'écriture.
     Les champs d'identité (nom, persona, marche, statut) ne sont pas touchés.
     """
-    score_brut = diag.scores.get("global", 0)
-    score = max(0, min(100, round(score_brut)))
+    # Un score global à None signifie « rien n'a pu être observé ». On le
+    # propage tel quel plutôt que de le convertir en 0 : un 0 fabriqué ferait
+    # remonter la fiche en tête du classement par besoin, exactement à
+    # l'inverse de la réalité.
+    score_brut = diag.scores.get("global")
+    score = None if score_brut is None else max(0, min(100, round(score_brut)))
 
     # Dédupliquer les dimensions sans perdre l'ordre d'importance
     gaps: list[str] = list(dict.fromkeys(g.dimension for g in diag.failles))
@@ -48,15 +52,26 @@ def diagnostic_to_rapport_md(diag: Diagnostic) -> str:
     """
     nom = diag.entreprise.nom
     url = diag.entreprise.url or "—"
-    score = max(0, min(100, round(diag.scores.get("global", 0))))
+    score_brut = diag.scores.get("global")
+    score = "non évalué" if score_brut is None else max(0, min(100, round(score_brut)))
     today = date.today().isoformat()
     rubrique = diag.meta.get("rubrique", "?")
     collecteurs = ", ".join(diag.meta.get("collecteurs", []))
 
-    # Scores par dimension (hors "global")
+    # Part de la rubrique réellement observée. Sans elle, un score renormalisé
+    # sur peu de signaux se lirait comme un score complet.
+    couverture = diag.scores.get("_couverture")
+    couverture_txt = "—" if couverture is None else f"{round(couverture * 100)} %"
+
+    # Scores par dimension (hors "global" et hors clés techniques « _… »).
+    # Une dimension non observée est affichée comme telle : elle n'est pas
+    # ramenée à 0, sans quoi le rapport affirmerait un fait jamais constaté.
     scores_lignes: list[str] = []
     for dim, val in diag.scores.items():
-        if dim == "global":
+        if dim == "global" or dim.startswith("_"):
+            continue
+        if val is None:
+            scores_lignes.append(f"| `{dim}` | non observé | `société non mesurée` |")
             continue
         v = max(0, min(100, round(val)))
         barre = "█" * (v // 10) + "░" * (10 - v // 10)
@@ -83,7 +98,7 @@ score_global: {score}
 
 # Rapport de diagnostic — {nom}
 
-*Généré le {today} · Score global : **{score}/100** · Rubrique persona {rubrique}*
+*Généré le {today} · Score global : **{score}/100** · Couverture : {couverture_txt} · Rubrique persona {rubrique}*
 
 ---
 

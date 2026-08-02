@@ -432,7 +432,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
 
-## État des tests (536 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (555 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -440,6 +440,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | Fichier | Couverture | Nb |
 |---------|-----------|-----|
 | `test_j1_smoke.py` | Pipeline end-to-end (smoke) | 6 |
+| `test_scoring.py` | Moteur : 3 états (ok/échec/inconnu), gravité déclarée, couverture, discrimination du signal_chaud | **19** |
 | `test_vault_schema.py` | FicheProspect, enums, transitions | 15 |
 | `test_vault_io.py` | VaultIO (écriture atomique, journal, query, transition) | 30 |
 | `test_vault_init.py` | Scaffold idempotent, dashboard, template, git | 25 |
