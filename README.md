@@ -252,7 +252,7 @@ pytest tests/ -v -k "export or usage or preflight"   # tests J5
 pytest tests/ -v -k "orchestrator or pipeline_cli"   # tests CORE
 pytest tests/integration -q                 # flux e2e réels contre un faux serveur local (46)
 pytest tests/test_greenit.py -q             # routage, frugalité, empreinte (78)
-pytest webapp/backend/tests -q              # backend cockpit (45 tests)
+pytest webapp/backend/tests -q              # backend cockpit (49 tests)
 cd webapp/frontend && npm run build && npm run test   # front (tsc + vite + vitest, 34)
 ```
 

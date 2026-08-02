@@ -131,7 +131,10 @@ rapport: null
 def _memory_map_md() -> str:
     """Génère la datasheet du système depuis vault_schema.py (source de vérité)."""
     statuts = " | ".join(f"`{s.value}`" for s in Statut)
-    marches = " | ".join(f"`{m.value}`" for m in Marche)
+    # ADR 0003 : `marche` n'est plus borné par l'enum — c'est un slug libre.
+    # L'enum reste la liste des marchés HISTORIQUES, citée à titre d'exemple :
+    # documenter la contrainte comme fermée induirait en erreur.
+    marches = " | ".join(f"`{m.value}`" for m in Marche) + " | … (slug libre)"
 
     transitions_rows = []
     for depart, cibles in sorted(TRANSITIONS_LEGALES.items(), key=lambda x: x[0].value):
@@ -155,7 +158,7 @@ def _memory_map_md() -> str:
 |---|---|---|---|---|
 | `type` | `str` | `prospect` | système | Discriminant, toujours `prospect` |
 | `persona` | `int` | `1` \\| `2` | humain / agent | 1 = HVAC Québec–Romandie · 2 = France–Suisse–Espagne |
-| `marche` | `str` | {marches} | humain / agent | Marché géographique ciblé |
+| `marche` | `str` | {marches} | humain / agent | Marché géographique ciblé (slug minuscule, ADR 0003) |
 | `statut` | `str` | {statuts} | machine à états | Workflow — transitions contrôlées par `vault_io` |
 | `nom` | `str` | — | humain | Nom officiel de l'entreprise |
 | `date_creation` | `date` | `AAAA-MM-JJ` | humain | Date d'entrée dans le vault |

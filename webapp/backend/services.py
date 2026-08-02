@@ -154,7 +154,10 @@ def _fiche_to_list_item(path: Path, fiche) -> dict:
         "nom": fiche.nom,
         "site_web": fiche.site_web,
         "statut": str(fiche.statut),
-        "persona": int(fiche.persona),
+        # persona est optionnel depuis l'ADR 0003 (multi-industrie) : un secteur
+        # identifié par `secteur_id` n'a pas de numéro de persona. Un int()
+        # inconditionnel plantait ici en 500 sur toute fiche `persona: null`.
+        "persona": int(fiche.persona) if fiche.persona is not None else None,
         "marche": str(fiche.marche),
         "score_global": fiche.score_global,
         "signal_chaud": fiche.signal_chaud,

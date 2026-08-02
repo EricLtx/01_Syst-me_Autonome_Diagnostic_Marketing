@@ -116,7 +116,7 @@ export function Dashboard() {
                       <span style={{ flex: 1, minWidth: 0 }}>
                         <div className="rowname">{p.nom}</div>
                         <div className="rowsub">
-                          {p.marche} · persona {p.persona}
+                          {p.marche}{p.persona != null ? ` · persona ${p.persona}` : ""}
                         </div>
                       </span>
                       <StatusPill statut={p.statut} />

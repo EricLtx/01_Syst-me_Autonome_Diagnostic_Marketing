@@ -326,3 +326,74 @@ def test_runs_absent(client: TestClient, vault_vide: Path) -> None:
     r = client.get("/api/runs")
     assert r.status_code == 200
     assert r.json() == []
+
+
+# ---------------------------------------------------------------------------
+# RÉGRESSION — ADR 0003 : persona est devenu optionnel (multi-industrie)
+#
+# Un secteur métier est désormais identifié par `icp_id`/`secteur_id`, plus par
+# un numéro de persona : une fiche peut légitimement porter `persona: null`.
+# `services._fiche_to_list_item` faisait `int(fiche.persona)` sans condition et
+# renvoyait une 500 sur TOUTE fiche de ce type — défaut trouvé par l'agent de
+# revue en exerçant le vrai endpoint, pas une fixture. Le cockpit doit dégrader
+# proprement sur les données que le socle sait maintenant produire.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def vault_multi_industrie(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Vault contenant une fiche legacy (persona=1) ET une fiche sans persona."""
+    vault = tmp_path / "vault_mi"
+    _init_vault_dirs(vault)
+    io = VaultIO(vault, log_path=tmp_path / "runs.log")
+
+    io.write_fiche(FicheProspect(
+        persona=1, marche="quebec", statut="diagnostique",
+        nom="Climatisation Legacy", date_creation=date(2026, 1, 15),
+        icp_id="persona1-quebec",
+    ))
+    # Secteur identifié par icp_id seul : aucun numéro de persona.
+    io.write_fiche(FicheProspect(
+        persona=None, marche="romandie", statut="diagnostique",
+        nom="Cabinet Dentaire Lausanne", date_creation=date(2026, 3, 1),
+        icp_id="dentaire-romandie",
+    ))
+    monkeypatch.setenv("VAULT_PATH", str(vault))
+    monkeypatch.setenv("RUNS_LOG", str(tmp_path / "runs.log"))
+    monkeypatch.setenv("PREFLIGHT_ROOT_DIR", str(tmp_path / "vide"))
+    (tmp_path / "vide").mkdir(exist_ok=True)
+    return vault
+
+
+class TestPersonaOptionnel:
+    def test_liste_prospects_ne_plante_pas_sur_persona_null(
+        self, client: TestClient, vault_multi_industrie: Path
+    ):
+        r = client.get("/api/prospects")
+        assert r.status_code == 200, r.text
+        par_nom = {p["nom"]: p for p in r.json()}
+        assert par_nom["Climatisation Legacy"]["persona"] == 1
+        assert par_nom["Cabinet Dentaire Lausanne"]["persona"] is None
+
+    def test_detail_ne_plante_pas_sur_persona_null(
+        self, client: TestClient, vault_multi_industrie: Path
+    ):
+        slug = next(
+            p["slug"] for p in client.get("/api/prospects").json()
+            if p["nom"] == "Cabinet Dentaire Lausanne"
+        )
+        r = client.get(f"/api/prospects/{slug}")
+        assert r.status_code == 200, r.text
+
+    def test_funnel_compte_les_deux_secteurs(
+        self, client: TestClient, vault_multi_industrie: Path
+    ):
+        r = client.get("/api/pipeline/funnel")
+        assert r.status_code == 200
+        assert r.json()["total"] == 2
+
+    def test_marche_hors_enum_historique_est_accepte(
+        self, client: TestClient, vault_multi_industrie: Path
+    ):
+        """romandie/dentaire : le marché n'est plus borné par un enum fermé."""
+        marches = {p["marche"] for p in client.get("/api/prospects").json()}
+        assert "romandie" in marches

@@ -53,7 +53,8 @@ export interface Prospect {
   nom: string;
   site_web: string | null;
   statut: Statut;
-  persona: number;
+  /** Optionnel depuis l'ADR 0003 : un secteur est identifié par icp_id. */
+  persona: number | null;
   marche: string;
   score_global: number | null;
   signal_chaud: boolean;

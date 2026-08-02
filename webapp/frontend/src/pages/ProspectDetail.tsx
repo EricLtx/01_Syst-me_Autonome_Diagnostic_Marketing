@@ -34,7 +34,7 @@ export function ProspectDetail() {
             <>
               <div className="page-head" style={{ marginBottom: 8 }}>
                 <span className="eyebrow">
-                  {p.icp_id} · persona {p.persona}
+                  {p.icp_id}{p.persona != null ? ` · persona ${p.persona}` : ""}
                 </span>
                 <h1>{p.nom}</h1>
                 <p style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

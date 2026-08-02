@@ -432,7 +432,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
 
-## État des tests (575 dans `tests/` + 45 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (575 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -463,7 +463,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_greenit.py` | GreenIT : config, routage déterministe, max_tokens, empreinte, troncature, ledger, rétro-compat, intégration synthesis | **78** |
 | `test_doc_coherence.py` | Garde-fou : les chiffres documentés (tests, routes, écrans, invariants, agents) doivent être les chiffres réels | **9** |
 | `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur | **46** |
-| `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **45** |
+| `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **49** |
 | `webapp/frontend/src/__tests__/` | Cockpit : api, dashboard, prospects, détail, greenit (Vitest) | **34** |
 
 **Toute la suite tourne sans aucune clé API** : c'est la preuve permanente que le

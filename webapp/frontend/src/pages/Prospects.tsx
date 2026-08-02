@@ -161,7 +161,7 @@ export function Prospects() {
                           {p.marche}
                         </span>
                         <div className="rowsub">
-                          persona {p.persona} · {fmtDate(p.date_diagnostic)}
+                          {p.persona != null ? `persona ${p.persona} · ` : ""}{fmtDate(p.date_diagnostic)}
                         </div>
                       </td>
                       <td>

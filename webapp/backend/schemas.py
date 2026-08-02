@@ -62,7 +62,9 @@ class ProspectListItem(BaseModel):
     nom: str
     site_web: str | None = None
     statut: str
-    persona: int
+    # Optionnel depuis l'ADR 0003 : un secteur métier est identifié par
+    # `icp_id`/`secteur_id`, plus par un numéro de persona.
+    persona: int | None = None
     marche: str
     score_global: int | None = None
     signal_chaud: str | None = None
