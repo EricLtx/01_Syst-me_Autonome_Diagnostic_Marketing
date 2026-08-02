@@ -79,14 +79,38 @@ def test_statut_inconnu_leve_erreur():
     assert "statut" in str(exc_info.value).lower()
 
 
-def test_persona_invalide_leve_erreur():
+def test_persona_positif_ou_absent_est_valide():
+    """Encodait B1 (ADR 0003) : `persona: Literal[1, 2]` plafonnait le système
+    à deux personas à jamais — `persona=3` levait `ValidationError`. Ce n'est
+    pas une régression silencieuse : c'est le changement de contrat que
+    l'ADR 0003 documente explicitement (persona devient un champ legacy,
+    `int | None` borné `ge=1`, sans rôle de sélection — c'est `secteur_id`/
+    `icp_id` qui porte désormais le choix de rubrique/vocabulaire). Ce test
+    encode maintenant l'invariant inverse : positif si fourni, ou absent —
+    jamais négatif/nul."""
+    fiche = FicheProspect(**{**FICHE_MINIMALE, "persona": 3})
+    assert fiche.persona == 3
+
+    sans_persona = {k: v for k, v in FICHE_MINIMALE.items() if k != "persona"}
+    assert FicheProspect(**sans_persona).persona is None
+
     with pytest.raises(ValidationError):
-        FicheProspect(**{**FICHE_MINIMALE, "persona": 3})
+        FicheProspect(**{**FICHE_MINIMALE, "persona": 0})
 
 
-def test_marche_inconnue_leve_erreur():
+def test_marche_slug_libre_est_valide():
+    """Encodait B2 (ADR 0003) : `Marche` était un enum fermé à cinq valeurs —
+    `marche="australie"` (absente de l'enum) levait `ValidationError`, tout
+    comme `marche="ontario"` l'aurait fait alors que c'est un marché légitime.
+    C'est le changement de contrat documenté par l'ADR 0003 : `marche` devient
+    un slug libre (motif générique), pas une régression silencieuse. Ce test
+    encode maintenant l'invariant inverse : tout slug bien formé est accepté,
+    seul un format illégal (majuscule, espace) est refusé."""
+    fiche = FicheProspect(**{**FICHE_MINIMALE, "marche": "australie"})
+    assert fiche.marche == "australie"
+
     with pytest.raises(ValidationError):
-        FicheProspect(**{**FICHE_MINIMALE, "marche": "australie"})
+        FicheProspect(**{**FICHE_MINIMALE, "marche": "Ontario"})  # majuscule interdite
 
 
 def test_score_global_hors_borne_haut():

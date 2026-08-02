@@ -6,70 +6,129 @@ sur chacune, écrit le rapport et met à jour le frontmatter.
 
 Principe n°2 (échec isolé) : si le pipeline échoue sur une fiche, elle reste
 `decouvert`, l'erreur est journalisée, et le traitement des autres continue.
+
+ADR 0003 (multi-industrie) — correction de B4 : AVANT, un seul pipeline était
+construit avec la rubrique persona 1, avant la boucle, puis appliqué à TOUTES
+les fiches quel que soit leur secteur. Écrire une seconde rubrique n'avait
+alors aucun effet. Désormais, chaque fiche est résolue à SON secteur
+(`secteur_id_for_fiche`) et un pipeline est construit — et mis en cache — PAR
+secteur rencontré dans le lot, pas par run.
 """
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Callable
 
 from diagnostic.collectors.gbp import GbpCollector
 from diagnostic.collectors.reviews import ReviewsCollector
 from diagnostic.collectors.seo import SeoCollector
 from diagnostic.collectors.social import SocialCollector
 from diagnostic.collectors.website import WebsiteCollector
-from diagnostic.config import load_knowledge, load_rubrique
+from diagnostic.config import load_icp, load_knowledge, load_rubrique, load_vocabulaire
 from diagnostic.models import Company
 from diagnostic.pipeline import DiagnosticPipeline
 from diagnostic.serializers import diagnostic_to_fiche, diagnostic_to_rapport_md
 from diagnostic.vault_io import VaultIO
+from diagnostic.vault_schema import FicheProspect
 
 
-def make_default_pipeline() -> DiagnosticPipeline:
-    """Construit le pipeline J1 standard avec la rubrique persona 1."""
+def secteur_id_for_fiche(fiche: FicheProspect) -> str:
+    """Résout la clé de configuration (rubrique/vocabulaire) pour CETTE fiche.
+
+    Priorité à l'ICP (`icp_id` → `IcpConfig.secteur_id`, qui peut être un
+    secteur inédit) ; repli sur `persona{N}` si `icp_id` est absent ou
+    introuvable — une fiche antérieure à J4 (pas d'`icp_id`) doit rester
+    diagnostiquable sans lever d'exception.
+    """
+    if fiche.icp_id:
+        try:
+            return load_icp(fiche.icp_id).secteur_id  # type: ignore[return-value]
+        except Exception:
+            pass  # ICP introuvable/invalide → repli déterministe ci-dessous
+    persona = fiche.persona if fiche.persona is not None else 1
+    return f"persona{persona}"
+
+
+def make_pipeline_for_secteur(secteur_id: str, api_io=None) -> DiagnosticPipeline:
+    """Construit le pipeline J1 pour CE secteur (rubrique + vocabulaire propres).
+
+    C'est le geste qui corrige B4 : `run_vault_mode` appelle cette factory une
+    fois par `secteur_id` rencontré dans le lot, jamais une fois pour tout le
+    run.
+    """
+    vocabulaire = (load_vocabulaire(secteur_id) or {}).get("mots_offre")
     return DiagnosticPipeline(
         collectors=[
-            WebsiteCollector(),
+            WebsiteCollector(vocabulaire_offre=vocabulaire),
             GbpCollector(),
             ReviewsCollector(),
             SeoCollector(),
             SocialCollector(),
         ],
-        rubrique=load_rubrique(),
-        knowledge=load_knowledge(),
+        rubrique=load_rubrique(secteur_id),
+        knowledge=load_knowledge(secteur_id),
+        api_io=api_io,
     )
 
 
 def run_vault_mode(
     vault_path: Path,
-    pipeline: DiagnosticPipeline | None = None,
+    pipeline=None,
 ) -> dict[str, list[str]]:
     """Traite toutes les fiches `decouvert` dans le vault.
 
+    `pipeline` accepte trois formes (résolues par fiche, jamais une seule
+    fois avant la boucle) :
+      - un `DiagnosticPipeline` déjà construit (ou un double de test type
+        `MagicMock`) : appliqué tel quel à TOUTES les fiches — comportement
+        historique préservé pour les call sites existants. Le discriminant
+        est `hasattr(pipeline, "run")` et non `isinstance(...)` : un
+        `MagicMock` n'est pas une instance de `DiagnosticPipeline`, mais il
+        répond à `.run` — `isinstance` casserait ces doubles de test.
+      - une factory `Callable[[secteur_id], DiagnosticPipeline]` : appelée
+        une fois par secteur rencontré (mise en cache), pour injecter par
+        exemple une `ApiIO` partagée (voir `orchestrator.py`, `run_diagnostic.py`).
+      - `None` (défaut) : résolution par fiche via `make_pipeline_for_secteur`,
+        sans injection réseau — comportement hors-ligne du mode CLI nu.
+
     Workflow par fiche :
-      1. Construit Company depuis la fiche
-      2. Exécute le pipeline de diagnostic
-      3. Écrit le rapport dans 30-Diagnostics/ (journalisé)
-      4. Met à jour le frontmatter (score, gaps, date, wikilink rapport)
-      5. Effectue la transition decouvert → diagnostique (journalisée)
+      1. Résout le pipeline propre à SON secteur
+      2. Construit Company depuis la fiche
+      3. Exécute le pipeline de diagnostic
+      4. Écrit le rapport dans 30-Diagnostics/ (journalisé)
+      5. Met à jour le frontmatter (score, gaps, date, wikilink rapport)
+      6. Effectue la transition decouvert → diagnostique (journalisée)
 
     Retourne {"ok": [noms], "erreurs": [messages]} pour le CLI.
     """
     io = VaultIO(Path(vault_path))
-    if pipeline is None:
-        pipeline = make_default_pipeline()
-
     fiches = io.query(statut="decouvert")
     ok: list[str] = []
     erreurs: list[str] = []
 
+    # Un pipeline par secteur_id rencontré dans CE lot (pas par run entier).
+    pipelines_par_secteur: dict[str, DiagnosticPipeline] = {}
+
     for fiche_path, fiche in fiches:
         try:
+            if hasattr(pipeline, "run"):
+                pl = pipeline
+            else:
+                secteur_id = secteur_id_for_fiche(fiche)
+                if secteur_id not in pipelines_par_secteur:
+                    fabrique: Callable[[str], DiagnosticPipeline] = (
+                        pipeline if callable(pipeline) else make_pipeline_for_secteur
+                    )
+                    pipelines_par_secteur[secteur_id] = fabrique(secteur_id)
+                pl = pipelines_par_secteur[secteur_id]
+
             company = Company(
                 nom=fiche.nom,
                 url=fiche.site_web or "",
                 region=str(fiche.marche),
             )
 
-            diag = pipeline.run(company)
+            diag = pl.run(company)
 
             # Rapport Markdown + wikilink
             rapport_md = diagnostic_to_rapport_md(diag)

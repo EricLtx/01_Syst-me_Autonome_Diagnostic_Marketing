@@ -512,9 +512,13 @@ class Orchestrateur:
             n = len(ctx.vault_io.query(statut="decouvert"))
             return ResultatNoeud("diagnostic", "execute", f"[DRY] {n} fiche(s) decouvert à diagnostiquer")
         # UNE seule ApiIO injectée ; run_vault_mode fait la seule transition
-        # agent autorisée : decouvert → diagnostique.
-        pipeline = run_diagnostic._build_pipeline(api_io=ctx.api_io)
-        resultat = run_vault_mode(ctx.vault_path, pipeline)
+        # agent autorisée : decouvert → diagnostique. Factory (pas un pipeline
+        # unique construit ici) : chaque secteur rencontré dans le lot reçoit
+        # SA rubrique/vocabulaire (ADR 0003, correction de B4).
+        resultat = run_vault_mode(
+            ctx.vault_path,
+            lambda secteur_id: run_diagnostic._build_pipeline(secteur_id, api_io=ctx.api_io),
+        )
         return ResultatNoeud(
             "diagnostic", "execute",
             f"{len(resultat['ok'])} diagnostiquée(s), {len(resultat['erreurs'])} erreur(s)",

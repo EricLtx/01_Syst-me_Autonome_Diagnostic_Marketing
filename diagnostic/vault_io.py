@@ -106,7 +106,9 @@ class VaultIO:
     # --- Helpers privés ---------------------------------------------------
 
     def _prospect_dir(self, fiche: FicheProspect) -> Path:
-        return self.vault / "10-Prospects" / f"persona{fiche.persona}-{fiche.marche}"
+        # persona est un vestige optionnel (ADR 0003, B1) : "x" en repli, pour
+        # ne jamais produire un répertoire "personaNone-…" illisible.
+        return self.vault / "10-Prospects" / f"persona{fiche.persona if fiche.persona is not None else 'x'}-{fiche.marche}"
 
     def _slug_path(self, fiche: FicheProspect) -> Path:
         return self._prospect_dir(fiche) / f"{_slugify(fiche.nom)}.md"

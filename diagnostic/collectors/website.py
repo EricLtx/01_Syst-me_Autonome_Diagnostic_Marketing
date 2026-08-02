@@ -15,6 +15,10 @@ Signaux produits (palier 0 enrichi §8.1) :
       Last-Modified HTTP, lastmod sitemap.xml, balises <time>, copyright_year
   - fraicheur_mois : ancienneté en mois depuis derniere_maj (int) ou None
   - _seo_text : texte consolidé (titre + meta-desc + corps tronqué) pour SeoCollector
+  - mentions_offre : True/False si un vocabulaire métier est configuré et
+      observé/absent, None si aucun vocabulaire n'est configuré pour ce
+      secteur (ADR 0003, anti-fuite B5 — absence d'observation ≠ observation
+      négative, même principe que le moteur de scoring à 3 états)
 """
 
 from __future__ import annotations
@@ -36,6 +40,12 @@ CACHE_DIR = Path(".cache/website")
 USER_AGENT = "DiagnosticMarque/0.1 (+prospection responsable ; contact@exemple.com)"
 TIMEOUT = 10
 
+# Vestige : conservé UNIQUEMENT comme valeur par défaut d'instanciation nue
+# (compatibilité des appels de test/CLI existants qui construisent
+# WebsiteCollector() sans argument). Le vocabulaire réel vit désormais dans
+# knowledge/vocabulaire_{secteur}.yaml (ADR 0003) — voir vault_runner.py qui
+# le charge et l'injecte explicitement, y compris None pour un secteur non
+# encore documenté.
 OFFRE_KEYWORDS = [
     "climatisation", "climatiseur", "chauffage", "pompe à chaleur",
     "thermopompe", "ventilation", "installation", "entretien", "cvac", "hvac",
@@ -46,9 +56,18 @@ SOCIAL_DOMAINS = ["facebook.", "instagram.", "linkedin.", "youtube.", "tiktok.",
 class WebsiteCollector(Collector):
     name = "website"
 
-    def __init__(self, use_cache: bool = True, api_io=None):
+    def __init__(
+        self,
+        use_cache: bool = True,
+        api_io=None,
+        vocabulaire_offre: list[str] | None = OFFRE_KEYWORDS,
+    ):
         self.use_cache = use_cache
         self._api_io = api_io
+        # None = secteur sans vocabulaire configuré → mentions_offre reste
+        # `None` (inconnu), jamais `False` (anti-fuite B5). Le défaut HVAC
+        # n'existe que pour ne pas casser les instanciations nues des tests.
+        self.vocabulaire_offre = vocabulaire_offre
 
     def collect(self, company: Company) -> dict[str, Any]:
         if not company.url:
@@ -86,7 +105,11 @@ class WebsiteCollector(Collector):
             "image_count": len(soup.find_all("img")),
             "has_logo": self._has_logo(soup),
             "has_contact": self._has_contact(soup, text),
-            "mentions_offre": any(k in text for k in OFFRE_KEYWORDS),
+            "mentions_offre": (
+                any(k in text for k in self.vocabulaire_offre)
+                if self.vocabulaire_offre is not None
+                else None
+            ),
             "social_links": self._social_links(soup),
             "copyright_year": copyright_year,
             "derniere_maj": derniere_maj,

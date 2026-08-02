@@ -28,15 +28,21 @@ from diagnostic.collectors.reviews import ReviewsCollector
 from diagnostic.collectors.seo import SeoCollector
 from diagnostic.collectors.social import SocialCollector
 from diagnostic.collectors.website import WebsiteCollector
-from diagnostic.config import load_knowledge, load_rubrique
+from diagnostic.config import load_knowledge, load_rubrique, load_vocabulaire
 from diagnostic.models import Company
 from diagnostic.pipeline import DiagnosticPipeline
 
 DEFAULT_VAULT = Path(__file__).resolve().parent / "vault"
 
 
-def _build_pipeline(api_io=None) -> DiagnosticPipeline:
-    """Construit le pipeline J1.
+def _build_pipeline(secteur_id: str | int = 1, api_io=None) -> DiagnosticPipeline:
+    """Construit le pipeline J1 pour un secteur donné (défaut : persona 1 — HVAC).
+
+    `secteur_id` : clé de sélection rubrique/vocabulaire (ADR 0003). Un int
+    legacy (`1`) se résout en "rubric_persona1.yaml" ; un `str` (secteur_id
+    inédit, ex. "dentaire-test") est utilisé tel quel — voir `config.py`.
+    Défaut `1` : le comportement du mode standard (`--nom/--url`) reste
+    inchangé pour tout appelant qui n'a pas de fiche/ICP à résoudre.
 
     `api_io` : injection de l'UNIQUE bus I/O. L'orchestrateur Kemana-Flow passe
     ici la même instance ApiIO que la découverte (budgets partagés, grand livre
@@ -44,16 +50,17 @@ def _build_pipeline(api_io=None) -> DiagnosticPipeline:
     diagnostic. DiagnosticPipeline propage `api_io` dans ses collecteurs et sa
     synthèse. Sans injection (défaut) le comportement J1 hors-ligne est inchangé.
     """
+    vocabulaire = (load_vocabulaire(secteur_id) or {}).get("mots_offre")
     return DiagnosticPipeline(
         collectors=[
-            WebsiteCollector(),
+            WebsiteCollector(vocabulaire_offre=vocabulaire),
             GbpCollector(),
             ReviewsCollector(),
             SeoCollector(),
             SocialCollector(),
         ],
-        rubrique=load_rubrique(),
-        knowledge=load_knowledge(),
+        rubrique=load_rubrique(secteur_id),
+        knowledge=load_knowledge(secteur_id),
         api_io=api_io,
     )
 
@@ -103,7 +110,13 @@ def main() -> None:
         vault_path = Path(args.vault)
         print(f"Vault : {vault_path.resolve()}")
         print("Traitement des fiches 'decouvert'...\n")
-        result = run_vault_mode(vault_path, _build_pipeline(api_io))
+        # Factory (pas un pipeline unique construit avant la boucle) : chaque
+        # secteur rencontré dans le lot reçoit SA rubrique/vocabulaire — c'est
+        # la correction de B4 côté CLI, symétrique de celle de l'orchestrateur.
+        result = run_vault_mode(
+            vault_path,
+            lambda secteur_id: _build_pipeline(secteur_id, api_io=api_io),
+        )
         for nom in result["ok"]:
             print(f"  ✓ {nom}")
         for err in result["erreurs"]:
@@ -116,7 +129,7 @@ def main() -> None:
             parser.error("--nom et --url sont requis en mode --out json (défaut)")
 
         company = Company(nom=args.nom, url=args.url, region=args.region)
-        diag = _build_pipeline(api_io).run(company)
+        diag = _build_pipeline(api_io=api_io).run(company)
 
         if args.json:
             print(diag.to_json())

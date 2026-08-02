@@ -83,8 +83,20 @@ class FicheProspect(BaseModel):
     type: Literal["prospect"] = "prospect"
 
     # Champs obligatoires
-    persona: Literal[1, 2]
-    marche: Marche
+    #
+    # persona et marche restent des champs LEGACY (ADR 0003) : depuis
+    # l'introduction de secteur_id/icp_id comme clé de configuration
+    # métier (rubrique, vocabulaire), ils n'ont plus de rôle de sélection.
+    # Un enum/Literal fermé plafonnait le système à 2 personas et 5 marchés
+    # à jamais (B1/B2) ; on les desserre sans les supprimer, pour ne pas
+    # casser le regroupement Dataview existant ni les répertoires vault
+    # `10-Prospects/personaN-marche/` déjà écrits.
+    persona: int | None = Field(default=None, ge=1)
+    # Slug libre (motif générique) plutôt que l'enum Marche fermé : un
+    # nouveau marché ("ontario", "banlieue-test"…) est une donnée, pas une
+    # release. Marche (l'enum) reste disponible pour l'affichage historique
+    # (vault_init.py) mais ne valide plus ce champ.
+    marche: str = Field(pattern=r"^[a-z0-9]+(-[a-z0-9]+)*$")
     statut: Statut
     nom: str
     date_creation: date

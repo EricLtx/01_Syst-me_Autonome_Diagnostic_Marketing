@@ -154,12 +154,20 @@ class TestValidationFrontmatter:
 
         assert target.read_text(encoding="utf-8") == original_content
 
-    def test_persona_invalide_leve_validation_error(self, tmp_path):
+    def test_persona_positif_est_valide(self, tmp_path):
+        """Encodait B1 (ADR 0003, même défaut que
+        test_vault_schema.py::test_persona_positif_ou_absent_est_valide) :
+        `persona: Literal[1, 2]` levait `ValidationError` pour `persona=9`.
+        L'ADR 0003 desserre `persona` en `int | None` (`ge=1`, champ legacy,
+        `secteur_id`/`icp_id` porte la sélection réelle) — `persona=9` est
+        donc désormais une fiche valide, pas une fiche corrompue. Changement
+        de contrat documenté, pas une régression silencieuse : voir ADR 0003
+        (docs/adr/0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md)."""
         io = VaultIO(tmp_path / "vault")
         target = self._write_bad(tmp_path, {"persona": 9})
 
-        with pytest.raises(ValidationError):
-            io.read_fiche(target)
+        fiche = io.read_fiche(target)
+        assert fiche.persona == 9
 
     def test_fichier_intact_apres_erreur(self, tmp_path):
         """read_fiche ne modifie jamais le fichier, même en cas d'erreur."""

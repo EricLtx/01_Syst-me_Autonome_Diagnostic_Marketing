@@ -1,0 +1,17 @@
+# knowledge/vocabulaire_persona1.yaml — DONNÉE, pas du code (ADR 0003).
+#
+# Migration VERBATIM de OFFRE_KEYWORDS (diagnostic/collectors/website.py) :
+# déplacement à l'identique, pas une nouvelle décision métier. Aucun mot
+# changé, aucun ajouté.
+
+mots_offre:
+  - "climatisation"
+  - "climatiseur"
+  - "chauffage"
+  - "pompe à chaleur"
+  - "thermopompe"
+  - "ventilation"
+  - "installation"
+  - "entretien"
+  - "cvac"
+  - "hvac"
