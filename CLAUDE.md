@@ -11,6 +11,8 @@
 
 > **Documentation détaillée** — ce fichier est le résumé opérationnel.
 > Voir `docs/architecture/` (vue d'ensemble, invariants, flux de données),
+> `docs/architecture/PARADIGMES.md` (les bascules structurantes du projet,
+> leur pourquoi et leurs conséquences — la carte mentale en quinze minutes),
 > `docs/adr/` (décisions structurantes), `docs/CHANGELOG.md` (avancement réel),
 > `docs/agents/ECOSYSTEME.md` (les agents et comment les invoquer).
 
@@ -478,6 +480,14 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
    d'agent neuf. Boucle jusqu'à ≥ 97 %.
 5. Itération 1 (2026-08-01) : CORE 12/12, BACKEND 7/7, FRONTEND 8/8 —
    **100 %, CLEARED, aucune hallucination détectée.**
+6. Itération 2 (2026-08-01) : GREENIT 100 %, INTÉGRATION 100 %, WEBAPP 100 % ;
+   **DOCUMENTATION 83,3 % → RELANCE** (chiffres périmés, corrigés par `611eb74`).
+7. Itération 3 (2026-08-02) : la revue a recalé le chantier **scoring** à
+   **78,6 %** (correction prouvée sur le moteur, pas sur le système — d'où
+   `4827474`) et le chantier **multi-industrie** à **92,3 %**
+   (`persona: null` faisait échouer le cockpit en 500, corrigé par `db0af6e`).
+   Le garde-fou documentaire lui-même (`tests/test_doc_coherence.py`) est né
+   d'une relance de ce type. Détail : `docs/architecture/PARADIGMES.md` §P7.
 
 ## État des tests (575 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
 
@@ -577,3 +587,28 @@ Fragments multi-tenant (gateway `api_io` métrée par tenant, isolation, coût p
 tenant). Déclenchement conditionné à un **seuil de tenants payants défini à
 l'avance**, pas à une intuition. Le vault reste la source de vérité : il n'est
 **pas** un read-model.
+
+### ADR 0004 — Axe `intention` : `[PROPOSÉ — AUCUNE LIGNE DE CODE LIVRÉE]`
+Décision : `docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`
+(commit `f36c276`, conception uniquement — vérifié : `git show --stat f36c276`
+ne touche que le fichier ADR).
+- Second axe `score_intention` : un **événement daté** (ex. recrutement
+  marketing) dont la valeur décroît avec le temps, à côté du score de
+  **besoin** (un état, sans date). Les deux ne doivent **jamais** se fondre
+  dans un score composite ni produire un tri de priorité automatique.
+- Réutilise `ScoringEngine` sans le modifier (`diagnostic/intent.py`, non
+  écrit). Preuve d'acceptation prévue : `git diff diagnostic/scoring.py` vide
+  après implémentation.
+- Deux collecteurs retenus si implémenté : extension de `website.py` (signal
+  de recrutement marketing, zéro nouveau réseau en Lot 1) et `legitimite.py`
+  (nouveau, palier 0, licences/certifications). Cinq autres candidats déjà
+  écartés par l'étude préalable restent écartés (registre légal, WHOIS/RDAP,
+  Wayback, PageSpeed, offres d'emploi via API externe).
+- ⚠️ **Réserve de méthode** : l'hypothèse qu'un signal d'intention ouvert
+  améliore la qualification d'un achat de conseil en branding est celle de la
+  commanditaire — aucune source académique ne l'établit dans les documents du
+  projet. L'étude préalable documente elle-même que `WebFetch`/`curl` ont reçu
+  un HTTP 403 sur toutes les pages tarifaires consultées : aucune référence
+  externe de ce dossier n'a été lue en texte intégral, seulement au niveau du
+  résumé de recherche.
+- Détail complet : `docs/architecture/PARADIGMES.md` §P6.

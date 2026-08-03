@@ -5,16 +5,23 @@
 > Ce qui est en cours de construction est marqué `[EN COURS]` et fera l'objet
 > d'une seconde passe documentaire.
 >
-> Dernière vérification : **2026-08-01**, branche
-> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `4585a10`
-> (itération 2 : GreenIT `6055e14`, cockpit `d5b14d1`, intégration `0234af3`).
-> Comptes vérifiés par exécution : `tests/` **527** · backend **45** · front **34**.
+> Dernière vérification : **2026-08-03**, branche
+> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `f36c276`
+> (itération 3 : garde-fou documentaire `671ebeb`/`7e41cb4`, moteur de scoring à
+> trois états `f77b4a6`/`4827474`, multi-industrie ADR 0003 `356c361`/`db0af6e`,
+> ADR 0004 « intention » proposée `f36c276`).
+> Comptes vérifiés par exécution : `tests/` **575** · backend **49** · front **34**.
+>
+> Voir aussi `docs/architecture/PARADIGMES.md` : **pourquoi** chacune de ces
+> bascules a été décidée et ce qu'elle interdit désormais — ce document-ci
+> décrit l'état, PARADIGMES.md décrit les arbitrages qui y ont mené.
 
 ## Table des documents
 
 | Document | Contenu |
 |---|---|
 | `docs/architecture/README.md` | ce fichier — vue d'ensemble et diagramme |
+| `docs/architecture/PARADIGMES.md` | les bascules structurantes : pourquoi chaque arbitrage a été pris, ce qu'il interdit désormais |
 | `docs/architecture/invariants.md` | les règles non négociables et **comment elles sont testées** |
 | `docs/architecture/flux-donnees.md` | la chaîne de bout en bout, entrée par entrée |
 | `docs/adr/` | décisions structurantes (ADR) |
@@ -351,14 +358,77 @@ mais **par le réseau**. Voir les colonnes « Comment c'est testé » de
 
 ---
 
-## 9. Trajectoire
+## 9. Multi-industrie — `secteur_id` comme clé de configuration (itération 3, livré)
+
+Décision : `docs/adr/0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md`
+(commit `675e85d`). Lot 1 implémenté : `356c361`. Correctif cockpit
+(`fiche.persona` optionnel) : `db0af6e`.
+
+Avant cette décision, cinq défauts vérifiés par exécution plafonnaient le
+système à « installateurs HVAC au Québec » — le plus grave : `run_vault_mode`
+construisait **un seul** pipeline avant la boucle de traitement d'un lot vault,
+appliqué à toutes les fiches quel que soit leur persona. Après :
+
+- `secteur_id` (nouveau champ `IcpConfig`) remplace `persona: int` comme clé de
+  sélection de rubrique, de vocabulaire et de fiche de connaissance. Défaut
+  `secteur_id = f"persona{persona}"` si absent — rétro-compatibilité totale.
+- `FicheProspect.persona` : `Literal[1, 2]` → `int | None` (borné `ge=1`).
+  `FicheProspect.marche` : enum fermé → `str` validé par un motif de slug.
+- `vault_runner.secteur_id_for_fiche(fiche)` résout la configuration **par
+  fiche** ; `run_vault_mode` construit et met en cache **un pipeline par
+  secteur rencontré dans le lot**.
+- `WebsiteCollector.vocabulaire_offre: list[str] | None` injecté par le
+  pipeline — vocabulaire absent → `mentions_offre = None` (inconnu), jamais
+  `False` (même discipline anti-fuite que le moteur de scoring, §10).
+
+**Ajouter un secteur/marché = trois fichiers YAML, zéro ligne de code.** Ce qui
+reste un travail humain : écrire le contenu métier (`rubric_{secteur}.yaml`,
+`vocabulaire_{secteur}.yaml`) — **aucune rubrique non-HVAC n'existe encore**.
+
+Vérification : `python -m pytest tests/test_multi_industrie.py -q` (15 tests).
+Détail du raisonnement : `docs/architecture/PARADIGMES.md` §P3.
+
+---
+
+## 10. Le moteur de scoring à trois états (itération 3, livré)
+
+Commits `f77b4a6` (moteur) et `4827474` (collecteurs de production). Pas une
+ADR — un correctif de fond au moteur existant, mais structurant au point d'être
+documenté comme le paradigme le plus important du projet
+(`docs/architecture/PARADIGMES.md` §P4).
+
+`diagnostic/scoring.py` distingue trois états : `ok` / `echec` / **`inconnu`**.
+Un check dont le signal vaut `None` ne produit ni point, ni dénominateur, ni
+faille. Le score de chaque dimension — et le score global — est renormalisé sur
+les seules dimensions **réellement observées** ; `scores["_couverture"]` publie
+la part du poids total évaluée.
+
+Cette règle a fermé la **même classe de défaut** à trois endroits distincts en
+une itération : le moteur lui-même (`None` compté comme échec → 45 % de la
+pondération fabriquée à zéro sans clé Google Places), les collecteurs Places
+(une réponse HTTP 200 `REQUEST_DENIED` lue comme « aucune fiche trouvée »),et
+le vocabulaire métier codé en dur (absence de configuration lue comme un fait
+négatif). Le motif commun : **de la connaissance métier ou un échec technique
+qui produit un faux négatif présenté comme une observation.**
+
+Vérification : `python -m pytest tests/test_scoring.py tests/test_collectors_phase_d.py -q`
+(19 + 38 tests).
+
+---
+
+## 11. Trajectoire
 
 | Palier | Contenu | Statut |
 |---|---|---|
 | **1** | Orchestrateur DAG déterministe, CLI unique, graphe en donnée, `ApiIO` unique injectée, cockpit lecture seule | **livré** (itération 1) |
 | **2** | Critique de grounding déterministe · conformité-par-donnée (`compliance/*.yaml` par marché) · routage de modèle piloté par YAML | **partiellement livré** — le routage de modèle YAML est fait (ADR 0002, itération 2). Restent la critique de grounding et la conformité-par-donnée |
 | **3** | Fragments multi-tenant (gateway métrée par tenant, isolation, coût par tenant) | **gelé** jusqu'à un seuil de tenants payants défini à l'avance |
+| — | Multi-industrie (`secteur_id`, ADR 0003) | **livré** (itération 3) — indépendant des paliers de l'ADR 0001 |
+| — | Axe `intention` daté et décroissant (ADR 0004) | **`[PROPOSÉ — NON IMPLÉMENTÉ]`** (itération 3) — conception actée, aucune ligne de code |
 
 Refus explicites et durables : le **superviseur-planificateur LLM** (coût,
 non-déterminisme, charge cognitive) et l'inversion de l'invariant du vault
-(le vault **est** la source de vérité, il n'est pas un read-model).
+(le vault **est** la source de vérité, il n'est pas un read-model). L'ADR 0004
+en ajoute un troisième, propre à son périmètre : **aucun score composite
+besoin × intention**, et aucun tri de priorité calculé automatiquement à partir
+des deux axes.

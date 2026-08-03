@@ -4,8 +4,12 @@
 > Chaque règle ci-dessous porte donc sa **preuve exécutable**. Les noms de
 > tests cités ont été relevés dans le dépôt le **2026-08-01** (commit de tête
 > `2ed8d93`) ; ils peuvent bouger, la commande de contrôle reste valable.
+> Section I17 complétée le **2026-08-03** (trois états ok/échec/inconnu,
+> commits `f77b4a6`/`4827474`) — comptes de tests re-vérifiés à cette date.
 >
 > Cadre général : `docs/architecture/README.md`.
+> **Pourquoi** ces règles ont pris la forme qu'elles ont, et ce qu'elles
+> interdisent désormais : `docs/architecture/PARADIGMES.md`.
 > Protocole de vérification par itération : `docs/strategie/GOUVERNANCE-revue-iterative.md`.
 
 ## Comment lire ce document
@@ -497,9 +501,26 @@ aussi ce qui maintient l'OPEX au plancher.
 Un contrôle QA vérifie qu'aucune affirmation n'est produite sans faille réelle
 correspondante.
 
+**Corollaire ajouté à l'itération 3 (commits `f77b4a6`, `4827474`) : trois
+états, jamais deux.** Un signal collecté vaut `ok`, `echec` ou **`inconnu`**
+(`diagnostic/scoring.py::_check_passes` retourne `None` dès que le signal n'a
+pas été observé). Un `inconnu` **ne produit jamais de faille** — le corollaire
+direct de « aucune affirmation non adossée » — et sort du dénominateur : le
+score global se renormalise sur les seules dimensions réellement observées
+(`scores["_couverture"]` publie la part évaluée). La même règle a dû être
+appliquée à deux reprises supplémentaires pour être tenue de bout en bout :
+dans les collecteurs Google Places (`diagnostic/collectors/_places.py` —
+seuls `OK`/`ZERO_RESULTS` sont des observations, un `REQUEST_DENIED` HTTP 200
+n'en est pas une) et dans le vocabulaire métier des collecteurs
+(`WebsiteCollector.vocabulaire_offre`, ADR 0003 — un secteur sans vocabulaire
+configuré produit `None`, jamais `False`). Raisonnement complet et les trois
+occurrences détaillées : `docs/architecture/PARADIGMES.md` §P4.
+
 **Comment c'est testé.**
 ```bash
 python -m pytest tests/test_j1_smoke.py tests/test_collectors_phase_d.py -q
+python -m pytest tests/test_scoring.py -q      # les trois états du moteur
+python -m pytest tests/test_multi_industrie.py -q   # anti-fuite de vocabulaire
 ```
 Toute la suite tourne **sans aucune clé API** : c'est la preuve permanente que
 le repli fonctionne.
