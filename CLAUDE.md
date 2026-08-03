@@ -597,6 +597,22 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
    (`persona: null` faisait échouer le cockpit en 500, corrigé par `db0af6e`).
    Le garde-fou documentaire lui-même (`tests/test_doc_coherence.py`) est né
    d'une relance de ce type. Détail : `docs/architecture/PARADIGMES.md` §P7.
+8. Itération 4 (2026-08-03) : chantier **axe intention** (ADR 0004) recalé à
+   **92,9 %** (13/14) sur la seule assertion A13 — **cohérence message de commit
+   ⇄ diff réel**. Le message de `cc99302` listait cinq fichiers sources sous
+   « Code » qui n'étaient pas dans son diff (`models.py`/`intent.py` venaient de
+   `ba750fe`, `_decay.py`/`legitimite.py`/`website.py` de `0f480b8`). Rectifié
+   par `be8578e` — dans le journal, **sans réécrire l'historique** (`cc99302`
+   était déjà poussé). Relance : **14/14, 100 %, CLEARED.**
+   Cause racine consignée, car c'est la **deuxième occurrence** après `f36c276` :
+   le message avait été rédigé depuis le **rapport final de l'agent
+   d'implémentation** — qui couvre un chantier entier — au lieu de `git diff
+   --cached`, qui couvre un diff. **Règle : un message de commit se rédige
+   depuis le diff indexé, jamais depuis un rapport.**
+   À noter pour l'usage du dispositif : A13 est le contrôle le moins
+   spectaculaire du protocole et il a désormais deux prises, **toutes deux sur
+   des messages écrits par l'agent coordinateur** — celui que personne d'autre
+   ne relit.
 
 ## État des tests (650 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration, axe intention)
 
