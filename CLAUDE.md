@@ -21,7 +21,11 @@ Cinq livrables métier (J1–J5), une couche d'ordonnancement (CORE) et une cons
 d'observation (cockpit) :
 
 - **J1 — pipeline diagnostic** : entrée = une entreprise ; sortie = score + mini-audit
-  de marque. Cible : persona 1 (installateur HVAC), séquence Québec → Suisse.
+  de marque. Cible du pilote : persona 1 (installateur HVAC), séquence Québec → Suisse.
+  Le moteur est **multi-industrie par mécanisme** depuis l'ADR 0003 (`secteur_id`
+  comme clé de configuration) — mais **aucune rubrique non-HVAC n'a encore été
+  écrite** : le mécanisme est prêt, le contenu métier d'un second secteur reste
+  à rédiger par la consultante.
 - **J2 — bus vault** : couche de persistance Obsidian. Le pipeline J1 écrit dans
   un vault structuré ; un opérateur humain valide et pilote via Obsidian. Audit de
   marque complet, traçable, versionné.
@@ -61,6 +65,11 @@ documentation ou un rapport.
   été exécuté.
 - **J6 outreach non activable** : `enabled: false` dans `dag_pipeline.yaml` **et**
   runner qui renvoie `bloque` même si le drapeau est forcé.
+- **Aucune rubrique non-HVAC n'existe encore** : le mécanisme multi-industrie
+  (ADR 0003, Lot 1, `356c361`) permet d'ajouter un secteur sans code, mais
+  personne n'a encore écrit `knowledge/rubric_<secteur>.yaml` ni
+  `knowledge/vocabulaire_<secteur>.yaml` pour un secteur autre que HVAC — c'est
+  un travail de jugement métier, pas une tâche de développement restante.
 - Lever les trois premiers points relève de la **Phase D** (paramétrage par
   l'opératrice : variables d'environnement + YAML), pas du développement.
 
@@ -76,8 +85,16 @@ Chaîne : `entrée → collecteurs → signaux → scoring → synthèse+QA → 
 2. **Collecteurs isolés et enfichables** (héritent de `Collector`, échec via
    `safe_collect`). On en ajoute un sans toucher aux autres.
 3. **La rubrique est une donnée** (`knowledge/rubric_*.yaml`), jamais du code.
-   Nouveau persona = nouvelle rubrique, `scoring.py` ne bouge pas.
+   Nouveau secteur = nouvelle rubrique + nouveau vocabulaire (ADR 0003), `scoring.py`
+   ne bouge pas.
 4. **QA avant sortie** : aucune affirmation non adossée aux failles réelles.
+5. **Trois états, jamais deux** : un check vaut `ok` / `echec` / **`inconnu`**
+   (`diagnostic/scoring.py`). Un signal `None` (non observé) ne produit **jamais**
+   de faille et sort du dénominateur — le score global est renormalisé sur les
+   seules dimensions observées, et `scores["_couverture"]` publie la part
+   réellement évaluée. Règle non négociable, née de trois occurrences du même
+   défaut corrigées en une itération (moteur, collecteurs Google Places,
+   vocabulaire métier codé en dur) : voir `docs/architecture/PARADIGMES.md` §P4.
 
 ### J2 — Bus vault (architecture micro-ordinateur)
 
@@ -236,11 +253,40 @@ Règles non négociables GreenIT :
   `knowledge/api_pricing.yaml` est à `0`, donc tous les coûts valent 0,00.
   Ne jamais avancer de gain chiffré avant la Phase D.
 
+### Multi-industrie — `icp_id`/`secteur_id` (ADR 0003, Lot 1 implémenté)
+
+Décision : `docs/adr/0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md`
+(commit `675e85d`). Implémentation Lot 1 : `356c361`. Correctif cockpit
+(`persona: null`) : `db0af6e`.
+
+Règles non négociables :
+- **`secteur_id` est la clé de sélection** de rubrique, de vocabulaire et de fiche
+  de connaissance — pas `persona`. Défaut si absent : `secteur_id =
+  f"persona{persona}"`, donc `persona1-quebec` se résout à l'identique sans
+  aucune modification.
+- **`FicheProspect.persona`** est `int | None` (borné `ge=1`) — plus un `Literal[1,2]`.
+  **`FicheProspect.marche`** est un `str` validé par un motif de slug — plus un enum
+  fermé. Les deux restent des champs **legacy** conservés pour ne pas casser le
+  regroupement Dataview existant.
+- **Résolution PAR FICHE, pas par run** : `vault_runner.secteur_id_for_fiche(fiche)`
+  résout la configuration de CETTE fiche ; `run_vault_mode` construit et met en
+  cache **un pipeline par secteur rencontré dans le lot**, jamais un pipeline unique
+  appliqué à tout le lot.
+- **Anti-fuite de vocabulaire** : `WebsiteCollector` reçoit `vocabulaire_offre: list[str]
+  | None` injecté par le pipeline. Vocabulaire absent → `mentions_offre = None`
+  (inconnu), jamais `False` — même discipline que la règle des trois états (J1 #5).
+- **Ajouter un secteur/marché = trois fichiers YAML**
+  (`icp/{secteur}-{marche}.yaml`, `knowledge/rubric_{secteur}.yaml`,
+  `knowledge/vocabulaire_{secteur}.yaml`), **zéro ligne de code**. Écrire le
+  contenu métier de ces fichiers reste un travail humain, hors périmètre
+  architecture.
+
 ### J4 — Agent de découverte
 
 Règles non négociables J4 :
 - **ICP = donnée** : `icp/*.yaml` validés par `IcpConfig` (Pydantic). Nouveau marché =
-  nouveau fichier YAML, zéro code. Cohérence `icp_id = "persona{persona}-{marche}"`.
+  nouveau fichier YAML, zéro code. Cohérence `icp_id = "{secteur_id}-{marche}"`
+  (généralisation de `persona{N}-{marche}`, ADR 0003).
 - **Candidate en mémoire** : `Candidate` (Pydantic, extra="forbid") entre SERP et vault.
   Jamais persistée directement — `run_discovery.py` la mappe vers `FicheProspect`.
 - **Dédup intra-lot** : domaine normalisé (minuscule, sans www., sans trailing slash).
@@ -308,7 +354,8 @@ runs.log                        ← journal des écritures vault, JSONL (gitigno
 
 docs/
 ├─ architecture/                ← README (vue + Mermaid), invariants, flux-donnees
-├─ adr/                         ← décisions structurantes (0001 DAG, 0002 GreenIT)
+├─ adr/                         ← décisions structurantes (0001 DAG, 0002 GreenIT,
+│                                  0003 multi-industrie, 0004 intention [PROPOSÉ])
 ├─ agents/ECOSYSTEME.md         ← cartographie des agents, invocation, amélioration
 ├─ CHANGELOG.md                 ← Keep a Changelog, une section par itération
 └─ strategie/                   ← PROPRIÉTÉ DU CHEF DE PROJET — lecture seule

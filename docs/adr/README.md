@@ -9,7 +9,20 @@ mois faute de mémoire.
 | N° | Titre | Statut | Date |
 |---|---|---|---|
 | [0001](0001-orchestrateur-dag-deterministe.md) | Orchestrateur DAG déterministe « Kemana-Flow » | acceptée — Palier 1 implémenté | 2026-08-01 |
-| [0002](0002-greenit-efficience-et-observabilite.md) | GreenIT : efficience des appels IA et observabilité de l'empreinte | acceptée — implémentée | 2026-08-01 |
+| [0002](0002-greenit-efficience-et-observabilite.md) | GreenIT : efficience des appels IA et observabilité de l'empreinte | acceptée — implémentée (mécanisme ; économie non chiffrable) | 2026-08-01 |
+| [0003](0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md) | `icp_id`/`secteur_id` comme clé de configuration multi-industrie | proposée dans le document — Lot 1 **implémenté** en pratique (`356c361`) ; l'en-tête de l'ADR n'a pas été mis à jour par son auteur | 2026-08-02 |
+| [0004](0004-axe-intention-et-collecteurs-osint-cibles.md) | Axe `intention` (second axe daté et décroissant) + collecteurs OSINT ciblés | **proposée — aucune ligne de code livrée** | 2026-08-03 |
+
+> **Note de cohérence (agent-documentation, 2026-08-03).** Le statut affiché
+> dans l'en-tête de l'ADR 0003 elle-même dit encore « proposée — conception
+> uniquement, aucune ligne de code livrée par cette ADR », alors que le commit
+> `356c361` (postérieur à l'ADR) a bien implémenté son Lot 1 dans le dépôt —
+> vérifié : `diagnostic/vault_schema.py` porte `persona: int | None`, `marche:
+> str` par motif de slug, et `diagnostic/vault_runner.py::secteur_id_for_fiche`
+> existe. Les ADR sont immuables une fois acceptées (voir §Règles ci-dessous) :
+> ce n'est donc pas à ce document de corriger l'en-tête 0003 lui-même — c'est un
+> écart à signaler à l'agent qui la maintient (`agent-architecte`), pas à
+> réparer ici.
 
 ## Quand écrire une ADR
 
