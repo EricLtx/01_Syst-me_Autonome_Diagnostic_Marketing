@@ -57,6 +57,49 @@ def diagnostic_to_fiche(diag: Diagnostic, fiche: FicheProspect) -> FicheProspect
     })
 
 
+# --- Seuils du dossier d'audit (ADR 0005) ---------------------------------
+# Tous `[À CALIBRER]` : ce sont des points de départ raisonnables, pas des
+# mesures. Aucun n'a été validé par la consultante.
+
+# En dessous de cette part de rubrique réellement observée, l'audit se déclare
+# PARTIEL. Sans ce seuil, « audit complet » serait une formule décorative :
+# c'est ici que la promesse devient vérifiable.
+SEUIL_AUDIT_COMPLET: float = 0.80  # [À CALIBRER]
+
+# Au-dessus de ce score, une dimension observée est nommée comme point fort.
+SEUIL_POINT_FORT: float = 70.0  # [À CALIBRER]
+
+# Ordre de traitement des écarts. Une gravité inconnue passe en dernier plutôt
+# qu'en premier : on ne fait pas remonter en tête ce qu'on n'a pas su qualifier.
+_ORDRE_GRAVITE: dict[str, int] = {"haute": 0, "moyenne": 1, "basse": 2}
+
+
+def _plan_action(diag: Diagnostic, scores_par_dim: dict[str, float]) -> list[str]:
+    """Ordonne les écarts en séquence d'action, de façon déterministe.
+
+    Deux clés, dans cet ordre : la gravité déclarée dans la rubrique, puis le
+    score de la dimension concernée (croissant — la dimension la plus faible
+    d'abord). Aucun LLM n'intervient : la priorité d'un écart se déduit de
+    faits déjà établis, pas d'un jugement rédactionnel.
+
+    On n'utilise volontairement PAS les poids de la rubrique : ils ne figurent
+    pas dans `Diagnostic`, et les y faire entrer élargirait un contrat que
+    l'ADR 0004 vient de stabiliser. Le score de la dimension est un proxy
+    suffisant et déjà disponible.
+    """
+    ordonnes = sorted(
+        diag.failles,
+        key=lambda g: (
+            _ORDRE_GRAVITE.get(g.gravite, 99),
+            scores_par_dim.get(g.dimension, 50.0),
+        ),
+    )
+    return [
+        f"| {rang} | `{g.dimension}` | {g.gravite} | {g.preuve} |"
+        for rang, g in enumerate(ordonnes, start=1)
+    ]
+
+
 def diagnostic_to_rapport_md(diag: Diagnostic) -> str:
     """Génère un rapport Markdown lisible depuis un Diagnostic.
 
@@ -80,26 +123,62 @@ def diagnostic_to_rapport_md(diag: Diagnostic) -> str:
     # Une dimension non observée est affichée comme telle : elle n'est pas
     # ramenée à 0, sans quoi le rapport affirmerait un fait jamais constaté.
     scores_lignes: list[str] = []
+    scores_par_dim: dict[str, float] = {}
+    dims_non_observees: list[str] = []
+    points_forts: list[str] = []
     for dim, val in diag.scores.items():
         if dim == "global" or dim.startswith("_"):
             continue
         if val is None:
             scores_lignes.append(f"| `{dim}` | non observé | `société non mesurée` |")
+            # Une dimension non observée n'est pas un trou : c'est une question
+            # à poser en rendez-vous. C'est le retournement central de l'ADR
+            # 0005 — la limite du système devient une matière de conversation.
+            dims_non_observees.append(dim)
             continue
         v = max(0, min(100, round(val)))
+        scores_par_dim[dim] = float(val)
         barre = "█" * (v // 10) + "░" * (10 - v // 10)
         scores_lignes.append(f"| `{dim}` | {v} | {barre} |")
+        if val >= SEUIL_POINT_FORT:
+            points_forts.append(f"| `{dim}` | {v} |")
     scores_table = "\n".join(scores_lignes) if scores_lignes else "| — | — | — |"
 
-    # Gaps détectés
-    if diag.failles:
-        gaps_lignes = [
-            f"| `{g.dimension}` | {g.gravite} | {g.preuve} |"
-            for g in diag.failles
-        ]
-        gaps_table = "\n".join(gaps_lignes)
+    # Complétude de l'audit : la promesse « audit complet » n'a de sens que si
+    # le document sait dire quand il ne l'est pas.
+    if couverture is None:
+        verdict_completude = "complétude inconnue"
+    elif couverture >= SEUIL_AUDIT_COMPLET:
+        verdict_completude = "audit complet"
     else:
-        gaps_table = "| — | — | Aucun gap majeur détecté |"
+        verdict_completude = "**audit PARTIEL**"
+
+    # Plan d'action : la séquence de travail, en tête du document.
+    plan_lignes = _plan_action(diag, scores_par_dim)
+    plan_table = (
+        "\n".join(plan_lignes) if plan_lignes
+        else "| — | — | — | Aucun écart majeur détecté sur les dimensions observées |"
+    )
+
+    # Points forts : un audit qui n'énumère que des fautes est moins crédible,
+    # et prive la consultante de ses points d'appui en rendez-vous.
+    forts_table = (
+        "\n".join(points_forts) if points_forts
+        else "| — | Aucune dimension observée n'atteint le seuil de point fort |"
+    )
+
+    # À vérifier : la liste de questions de l'opératrice.
+    if dims_non_observees:
+        a_verifier = "\n".join(
+            f"- `{d}` — non observé par le système ; à confirmer auprès de l'entreprise."
+            for d in dims_non_observees
+        )
+    else:
+        a_verifier = "- Toutes les dimensions de la rubrique ont été observées."
+
+    # Note : il n'y a plus de table « Écarts détectés » non ordonnée. Elle
+    # dupliquait ligne pour ligne le plan d'action priorisé, au même endroit du
+    # document, sans rien ajouter — la seule différence était l'absence d'ordre.
 
     # Section « Signaux d'intention » (ADR 0004) : rendue seulement si au
     # moins un événement a été détecté — un axe non configuré pour ce
@@ -133,9 +212,14 @@ date_rapport: {today}
 score_global: {score}
 ---
 
-# Rapport de diagnostic — {nom}
+# Audit marketing express — {nom}
 
-*Généré le {today} · Score global : **{score}/100** · Couverture : {couverture_txt} · Rubrique persona {rubrique}*
+*Généré le {today} · {verdict_completude} · Couverture : {couverture_txt} · Rubrique persona {rubrique}*
+
+> **Document de travail interne.** Il prépare l'entretien ; il n'est pas
+> destiné à être remis tel quel. Chaque observation ci-dessous est adossée à
+> un fait collecté — ce qui n'a pas été observé est dit comme tel, jamais
+> comblé.
 
 ---
 
@@ -145,20 +229,49 @@ score_global: {score}
 
 ---
 
+## Écarts détectés — plan d'action priorisé
+
+Ordonné par gravité, puis par faiblesse de la dimension. Séquence déterministe :
+aucune rédaction ne réordonne ce tableau. Chaque ligne est adossée à un fait
+collecté.
+
+| # | Dimension | Gravité | Écart constaté |
+|---|---|---|---|
+{plan_table}
+
+---
+
+## Points forts
+
+Ce sur quoi l'entreprise peut s'appuyer — et sur quoi ouvrir la conversation.
+
+| Dimension | Score /100 |
+|---|---|
+{forts_table}
+
+---
+
+## À vérifier en entretien
+
+Ce que le système n'a **pas** pu observer. Ce ne sont pas des lacunes de
+l'entreprise : ce sont les questions à poser.
+
+{a_verifier}
+{section_intention}
+---
+
 ## Scores par dimension
+
+Instrument de lecture interne, **non comparable d'une entreprise à l'autre** :
+chaque score est renormalisé sur les seules dimensions observées, et deux
+entreprises couvertes différemment ne passent pas le même examen.
 
 | Dimension | Score /100 | Visuel |
 |---|---|---|
 {scores_table}
 
----
+*Score global : **{score}/100** sur une couverture de {couverture_txt}.*
 
-## Gaps détectés
-
-| Dimension | Gravité | Observation |
-|---|---|---|
-{gaps_table}
-{section_intention}
 ---
 
 ## Accroche d'outreach

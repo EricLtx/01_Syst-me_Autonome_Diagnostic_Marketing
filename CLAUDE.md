@@ -614,7 +614,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
    des messages écrits par l'agent coordinateur** — celui que personne d'autre
    ne relit.
 
-## État des tests (650 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration, axe intention)
+## État des tests (669 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration, axe intention, dossier d'audit)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -650,6 +650,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_website_intention.py` | ADR 0004 : `offre_detectee`/`offre_detectee_date`, escalade page carrières | **10** |
 | `test_config_intent.py` | ADR 0004 : `load_rubrique_intention`, `load_vocabulaire_intention`, `load_certifications` | **7** |
 | `test_serializers_intention.py` | ADR 0004 : dérivation `signal_intention`/`date_intention`/`intention_expire_le`, contrainte `citable=True` | **10** |
+| `test_audit_dossier.py` | ADR 0005 : complétude auto-déclarée, dimension non observée → question d'entretien, points forts, plan d'action déterministe, score déclaré non comparable | **19** |
 | `test_vault_io_historique.py` | ADR 0004 : `append_historique()` — append-only, jamais `os.replace()` | **6** |
 | `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur, axe intention | **56** |
 | `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **49** |

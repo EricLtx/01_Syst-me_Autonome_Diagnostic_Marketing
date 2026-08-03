@@ -153,8 +153,18 @@ class TestFluxDiagnosticVault:
         rapports = sorted((chemins["vault"] / "30-Diagnostics").glob("*.md"))
         assert len(rapports) >= 2
         contenu = rapports[0].read_text(encoding="utf-8")
-        assert "# Rapport de diagnostic" in contenu
-        assert "## Gaps détectés" in contenu
+        # ADR 0005 : le livrable n'est plus un relevé de diagnostic mais un
+        # dossier d'audit. Le titre change avec lui (« Rapport de diagnostic »
+        # → « Audit marketing express »), et la section « Gaps détectés » a été
+        # renommée « Écarts détectés » — vocabulaire d'audit, pas de scoring.
+        # L'intention d'origine du test est préservée et même renforcée : on
+        # vérifie toujours qu'un document titré et sectionné est bien écrit
+        # dans le vault, et on y ajoute les deux sections qui portent la
+        # valeur du nouveau paradigme (plan d'action, dimensions non observées
+        # transformées en questions d'entretien).
+        assert "# Audit marketing express" in contenu
+        assert "## Écarts détectés" in contenu
+        assert "## À vérifier en entretien" in contenu
 
     @sans_sdk_anthropic
     def test_synthese_passe_par_le_faux_endpoint_anthropic(

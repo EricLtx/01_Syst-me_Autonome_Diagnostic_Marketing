@@ -244,7 +244,7 @@ Thème clair et sombre. Un mode mock permet de démontrer l'application
 ## Tests
 
 ```bash
-pytest tests/ -v                            # suite complète (650 tests — J1 à J5, CORE, GreenIT, axe intention, e2e)
+pytest tests/ -v                            # suite complète (669 tests — J1 à J5, CORE, GreenIT, axe intention, dossier d'audit, e2e)
 pytest tests/integration -v                 # tests d'intégration e2e (faux serveur d'API local)
 pytest tests/ -v -k "vault"                 # tests vault
 pytest tests/ -v -k "integration"           # test end-to-end
