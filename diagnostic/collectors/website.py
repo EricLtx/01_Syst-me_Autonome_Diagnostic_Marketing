@@ -19,6 +19,17 @@ Signaux produits (palier 0 enrichi §8.1) :
       observé/absent, None si aucun vocabulaire n'est configuré pour ce
       secteur (ADR 0003, anti-fuite B5 — absence d'observation ≠ observation
       négative, même principe que le moteur de scoring à 3 états)
+  - offre_detectee : True/False si un vocabulaire de recrutement est
+      configuré et observé/absent sur la page d'accueil, None si aucun
+      vocabulaire n'est configuré (ADR 0004, même discipline anti-fuite que
+      mentions_offre). Alimente l'axe INTENTION (`diagnostic/intent.py`),
+      jamais le scoring de besoin.
+  - offre_detectee_date : date ISO (YYYY-MM-DD) de l'offre si une page
+      carrières a été identifiée sur la page d'accueil ET fetchée (un SEUL
+      appel réseau de plus, via le bus, même convention que _try_sitemap) ;
+      None si aucun lien carrières n'a été trouvé, si le fetch a échoué, ou
+      si aucune date n'a pu être extraite — un événement non daté est écarté
+      en amont du scoring (ADR 0004 D2), jamais traité comme permanent.
 """
 
 from __future__ import annotations
@@ -29,7 +40,7 @@ import json
 import re
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 from bs4 import BeautifulSoup
 
@@ -52,6 +63,15 @@ OFFRE_KEYWORDS = [
 ]
 SOCIAL_DOMAINS = ["facebook.", "instagram.", "linkedin.", "youtube.", "tiktok.", "x.com", "twitter."]
 
+# Indices de lien vers une page carrières (ADR 0004, Lot 2). Volontairement
+# générique (pas un vocabulaire métier) : sert uniquement à repérer LE lien,
+# jamais à juger du contenu — c'est le vocabulaire d'intention injecté qui
+# juge, sur le texte de la page d'accueil, si un recrutement est mentionné.
+CARRIERE_HREF_HINTS = (
+    "carriere", "carrieres", "career", "careers", "jobs",
+    "emploi", "emplois", "recrut",
+)
+
 
 class WebsiteCollector(Collector):
     name = "website"
@@ -61,6 +81,7 @@ class WebsiteCollector(Collector):
         use_cache: bool = True,
         api_io=None,
         vocabulaire_offre: list[str] | None = OFFRE_KEYWORDS,
+        vocabulaire_intention: list[str] | None = None,
     ):
         self.use_cache = use_cache
         self._api_io = api_io
@@ -68,6 +89,10 @@ class WebsiteCollector(Collector):
         # `None` (inconnu), jamais `False` (anti-fuite B5). Le défaut HVAC
         # n'existe que pour ne pas casser les instanciations nues des tests.
         self.vocabulaire_offre = vocabulaire_offre
+        # None (défaut) = axe intention non configuré pour ce secteur →
+        # offre_detectee reste `None` (inconnu), jamais `False` — même
+        # discipline anti-fuite que vocabulaire_offre (ADR 0004).
+        self.vocabulaire_intention = vocabulaire_intention
 
     def collect(self, company: Company) -> dict[str, Any]:
         if not company.url:
@@ -93,6 +118,20 @@ class WebsiteCollector(Collector):
         meta_desc = self._meta_desc_content(soup)
         seo_text = f"{title_text} {meta_desc} {text[:2000]}"
 
+        offre_detectee = (
+            any(k in text for k in self.vocabulaire_intention)
+            if self.vocabulaire_intention is not None
+            else None
+        )
+        # Escalade conditionnelle (ADR 0004, Lot 2) : UN SEUL appel de plus,
+        # jamais systématique — seulement quand le recrutement est déjà
+        # détecté sur la page d'accueil ET qu'un lien carrières y est visible.
+        offre_detectee_date: str | None = None
+        if offre_detectee:
+            lien_carrieres = self._lien_carrieres(soup, final_url)
+            if lien_carrieres:
+                offre_detectee_date = self._try_page_carrieres(lien_carrieres)
+
         return {
             "reachable": True,
             "status": status,
@@ -110,6 +149,8 @@ class WebsiteCollector(Collector):
                 if self.vocabulaire_offre is not None
                 else None
             ),
+            "offre_detectee": offre_detectee,
+            "offre_detectee_date": offre_detectee_date,
             "social_links": self._social_links(soup),
             "copyright_year": copyright_year,
             "derniere_maj": derniere_maj,
@@ -192,6 +233,61 @@ class WebsiteCollector(Collector):
                     return None
                 xml = resp.text
             return self._parse_sitemap_lastmod(xml)
+        except Exception:
+            return None
+
+    def _lien_carrieres(self, soup: BeautifulSoup, final_url: str) -> str | None:
+        """Repère un lien vers une page carrières sur la page d'accueil.
+
+        Ne juge jamais du contenu (c'est le vocabulaire d'intention, sur le
+        texte de la page d'accueil, qui le fait) : sert uniquement à
+        localiser LE lien qui justifiera l'unique appel réseau
+        supplémentaire de l'escalade (ADR 0004, Lot 2).
+        """
+        for a in soup.find_all("a", href=True):
+            indice = f"{a['href']} {a.get_text(' ', strip=True)}".lower()
+            if any(mot in indice for mot in CARRIERE_HREF_HINTS):
+                return urljoin(final_url, a["href"])
+        return None
+
+    def _try_page_carrieres(self, url: str) -> str | None:
+        """Fetch de la page carrières — UN SEUL appel de plus, jamais
+        systématique (même convention que `_try_sitemap` : bus `api_io`,
+        cache obligatoire par `cache_key`). Retourne une date ISO si
+        extractible, `None` sinon (échec réseau, page sans date) — un
+        événement non daté est écarté en amont (ADR 0004 D2), jamais
+        traité comme permanent.
+        """
+        try:
+            if self._api_io is not None:
+                data = self._api_io.call(
+                    "http", "get",
+                    lambda: self._do_get(url),
+                    cache_key=url if self.use_cache else None,
+                )
+                html = data.get("html")
+                last_modified = data.get("last_modified")
+            else:
+                import requests as _req
+                resp = _req.get(url, headers={"User-Agent": USER_AGENT}, timeout=TIMEOUT)
+                if not isinstance(resp.status_code, int) or resp.status_code != 200:
+                    return None
+                html = resp.text
+                lm = resp.headers.get("Last-Modified")
+                last_modified = str(lm) if isinstance(lm, str) else None
+
+            if not html:
+                return None
+            sous_soupe = BeautifulSoup(html, "html.parser")
+            date_html = self._parse_dates_html(sous_soupe)
+            if date_html:
+                return date_html
+            if last_modified:
+                from email.utils import parsedate
+                t = parsedate(last_modified)
+                if t:
+                    return f"{t[0]:04d}-{t[1]:02d}-{t[2]:02d}"
+            return None
         except Exception:
             return None
 
