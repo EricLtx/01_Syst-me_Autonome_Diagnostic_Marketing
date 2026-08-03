@@ -40,6 +40,21 @@
 # la mention « à confirmer » : un gap n'est émis que s'il a été OBSERVÉ.
 #
 # Opérateurs disponibles : is_true | gte | lte | exists | non_vide
+#
+# ADR 0004 — deux ajouts À CE FICHIER, tous deux côté BESOIN (un état, pas
+# un événement daté — voir knowledge/intent_persona1.yaml pour l'axe
+# intention, un fichier SÉPARÉ, jamais scoré par ce moteur) :
+#   1. `legitimite_conformite` (nouvelle dimension, §D8 « Retenu 2 ») :
+#      licence professionnelle / programme de subvention affichés par
+#      l'entreprise elle-même — zéro appel réseau, dérivé du HTML déjà en
+#      mémoire (diagnostic/collectors/legitimite.py).
+#   2. `reviews.date_dernier_avis` sous `avis` (§D7, reclassé depuis
+#      l'intention : « une note Google basse ne vieillit pas », donc un état,
+#      jamais un événement — pur ajout YAML, zéro nouveau code, le champ est
+#      déjà produit par reviews.py, déjà jeté aujourd'hui).
+# Poids rééquilibrés pour garder un total de 100 (site_web 25→20,
+# presence_locale 20→15) : [À CALIBRER] par la consultante, comme le reste
+# de ce fichier — ce rééquilibrage est un point de départ, pas une mesure.
 
 persona: "Détaillant / installateur HVAC (climatisation, chauffage, PAC)"
 
@@ -50,7 +65,7 @@ dimensions:
   # écarte en 90 secondes celui qui ne le rassure pas.
   # -------------------------------------------------------------------
   site_web:
-    poids: 25
+    poids: 20
     checks:
       - { signal: website.reachable,           op: is_true, points: 20, gravite: haute,   gap: "Site web inaccessible ou inexistant" }
       - { signal: website.https,               op: is_true, points: 10, gravite: moyenne, gap: "Pas de HTTPS — signal de confiance manquant" }
@@ -66,7 +81,7 @@ dimensions:
   # dimension sort proprement du calcul au lieu de le fausser.
   # -------------------------------------------------------------------
   presence_locale:
-    poids: 20
+    poids: 15
     checks:
       - { signal: gbp.verified,    op: is_true, points: 60, gravite: haute,   gap: "Fiche d'établissement non vérifiée" }
       - { signal: gbp.has_photos,  op: is_true, points: 40, gravite: moyenne, gap: "Aucune photo sur la fiche d'établissement" }
@@ -82,6 +97,12 @@ dimensions:
       - { signal: reviews.count,          op: gte, value: 10,  points: 40, gravite: haute,   gap: "Moins de 10 avis — preuve sociale faible" }
       - { signal: reviews.avg,            op: gte, value: 4.0, points: 40, gravite: haute,   gap: "Note moyenne sous 4,0" }
       - { signal: reviews.repond_aux_avis, op: is_true, points: 20, gravite: moyenne, gap: "Les avis clients restent sans réponse" }
+      # ADR 0004 §D7 : proxy de fraîcheur de la réputation, reclassé depuis
+      # l'intention (un état, pas un événement daté — ne "vieillit" pas au
+      # sens de la décroissance). `exists` : la seule vérification possible
+      # sans nouveau code (une comparaison "depuis combien de jours" exigerait
+      # un champ dérivé numérique que reviews.py ne produit pas aujourd'hui).
+      - { signal: reviews.date_dernier_avis, op: exists, points: 20, gravite: basse, gap: "Aucune date de dernier avis connue — activité en ligne dormante" }
 
   seo_local:
     poids: 15
@@ -108,3 +129,16 @@ dimensions:
     checks:
       - { signal: website.fraicheur_mois,           op: lte, value: 18, points: 60, gravite: haute,   gap: "Site sans mise à jour depuis plus de 18 mois" }
       - { signal: social.plateformes_mentionnees,   op: non_vide,       points: 40, gravite: moyenne, gap: "Aucune présence sociale reliée depuis le site" }
+
+  # -------------------------------------------------------------------
+  # ADR 0004 §D8 « Retenu 2 » — legitimite.py (palier 0, zéro appel réseau
+  # de plus). Une licence professionnelle affichée est un ÉTAT (elle reste
+  # vraie tant qu'elle n'est pas retirée), jamais un événement daté : cette
+  # dimension reste côté BESOIN, pas intention (cohérent avec §B1).
+  # Motifs en donnée (knowledge/certifications_{marche}.yaml), jamais en dur.
+  # -------------------------------------------------------------------
+  legitimite_conformite:
+    poids: 10
+    checks:
+      - { signal: legitimite.licence_professionnelle, op: is_true, points: 60, gravite: haute, gap: "Aucune licence professionnelle affichée (RBQ, maître mécanicien...)" }
+      - { signal: legitimite.programme_subvention,     op: is_true, points: 40, gravite: basse, gap: "Aucun programme de subvention en vigueur mentionné" }

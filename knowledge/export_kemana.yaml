@@ -13,6 +13,13 @@ colonnes:
   - { entete: "Site",         champ: site_web              }
   - { entete: "Score",        champ: score_global          }
   - { entete: "Signal chaud", champ: signal_chaud          }
+  # ADR 0004 (volet export du Lot 3) : colonnes intention, purement
+  # additives — un événement d'intention n'est jamais un score, jamais
+  # utilisé pour trier ou disqualifier automatiquement (voir D5). Ces
+  # colonnes restent vides pour toute fiche sans événement CITABLE détecté.
+  - { entete: "Signal intention",  champ: signal_intention      }
+  - { entete: "Date intention",    champ: date_intention        }
+  - { entete: "Intention expire",  champ: intention_expire_le   }
   - { entete: "Statut",       champ: statut                }
 
 encodage: utf-8-sig

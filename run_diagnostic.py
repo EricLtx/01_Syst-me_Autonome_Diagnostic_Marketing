@@ -24,15 +24,27 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from diagnostic.collectors.gbp import GbpCollector
+from diagnostic.collectors.legitimite import LegitimiteCollector
 from diagnostic.collectors.reviews import ReviewsCollector
 from diagnostic.collectors.seo import SeoCollector
 from diagnostic.collectors.social import SocialCollector
 from diagnostic.collectors.website import WebsiteCollector
-from diagnostic.config import load_knowledge, load_rubrique, load_vocabulaire
+from diagnostic.config import (
+    load_certifications,
+    load_knowledge,
+    load_rubrique,
+    load_rubrique_intention,
+    load_vocabulaire,
+    load_vocabulaire_intention,
+)
 from diagnostic.models import Company
 from diagnostic.pipeline import DiagnosticPipeline
 
 DEFAULT_VAULT = Path(__file__).resolve().parent / "vault"
+
+# Voir diagnostic/vault_runner.py::MARCHE_CERTIFICATIONS_PAR_DEFAUT — même
+# limite assumée, même raison (aucun second marché avec ICP réel à ce jour).
+MARCHE_CERTIFICATIONS_PAR_DEFAUT = "quebec"
 
 
 def _build_pipeline(secteur_id: str | int = 1, api_io=None) -> DiagnosticPipeline:
@@ -51,17 +63,24 @@ def _build_pipeline(secteur_id: str | int = 1, api_io=None) -> DiagnosticPipelin
     synthèse. Sans injection (défaut) le comportement J1 hors-ligne est inchangé.
     """
     vocabulaire = (load_vocabulaire(secteur_id) or {}).get("mots_offre")
+    vocabulaire_intention = (load_vocabulaire_intention(secteur_id) or {}).get("mots_recrutement")
+    motifs_legitimite = load_certifications(MARCHE_CERTIFICATIONS_PAR_DEFAUT)
     return DiagnosticPipeline(
         collectors=[
-            WebsiteCollector(vocabulaire_offre=vocabulaire),
+            WebsiteCollector(
+                vocabulaire_offre=vocabulaire,
+                vocabulaire_intention=vocabulaire_intention,
+            ),
             GbpCollector(),
             ReviewsCollector(),
             SeoCollector(),
             SocialCollector(),
+            LegitimiteCollector(motifs=motifs_legitimite),
         ],
         rubrique=load_rubrique(secteur_id),
         knowledge=load_knowledge(secteur_id),
         api_io=api_io,
+        rubrique_intention=load_rubrique_intention(secteur_id),
     )
 
 

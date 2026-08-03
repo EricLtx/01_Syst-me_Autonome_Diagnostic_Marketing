@@ -177,6 +177,9 @@ def _memory_map_md() -> str:
 | `opt_out` | `bool` | `true` / `false` | humain | Si `true` : exclu de tout export/outreach |
 | `signal_chaud` | `str \\| null` | — | **agent J5** | Preuve de la faille la plus impactante (accroche CRM) |
 | `accroche` | `str \\| null` | — | **agent J5** | Phrase d'outreach générée par synthesis.py |
+| `signal_intention` | `str \\| null` | — | **agent** | Preuve de l'événement d'intention le plus récent — dérivé UNIQUEMENT d'un événement `citable=True` (ADR 0004), jamais fabriqué pour une entreprise non observée : absence d'événement ⇒ `null`, pas « pas d'intention » |
+| `date_intention` | `date \\| null` | `AAAA-MM-JJ` | **agent** | Date de l'événement d'intention retenu (ADR 0004) |
+| `intention_expire_le` | `date \\| null` | `AAAA-MM-JJ` | **agent** | Péremption calculée UNE SEULE FOIS au diagnostic (`date_evenement` + fenêtre déclarée en YAML) — jamais recalculée après coup : un lecteur compare `aujourd'hui > intention_expire_le`, il ne rafraîchit rien |
 
 > **Annotations libres** : tout champ non listé ci-dessus est toléré et préservé
 > en round-trip (`extra = "allow"`). Exemples : `note_humaine`, `priorite`, `relance_prevue`.

@@ -121,3 +121,10 @@ class FicheProspect(BaseModel):
     # Champs ajoutés en J5 (sortie — dérivés dans serializers.py, pas dans Diagnostic)
     signal_chaud: str | None = None   # preuve de la faille la plus impactante (accroche CRM)
     accroche: str | None = None       # phrase d'outreach générée par synthesis.py
+
+    # Champs ajoutés en ADR 0004 (axe intention — tous optionnels, défaut
+    # None, même régime que signal_chaud/accroche : fiches antérieures
+    # relues sans migration).
+    signal_intention: str | None = None      # preuve de l'événement d'intention le plus récent CITABLE
+    date_intention: date | None = None       # date de cet événement (jamais recalculée après coup)
+    intention_expire_le: date | None = None  # péremption calculée une fois : date.today() > ceci ⇒ intention "faible"

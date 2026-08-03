@@ -1,0 +1,53 @@
+# knowledge/certifications_quebec.yaml
+#
+# [À CALIBRER — hypothèse, non mesurée]
+#
+# Motifs de légitimité/conformité pour le marché QUÉBEC (ADR 0004,
+# `diagnostic/collectors/legitimite.py`). Brouillon de travail : la
+# consultante (ou agent-produit) doit réviser et compléter cette liste avant
+# tout usage commercial réel — ces expressions n'ont pas été mesurées sur un
+# corpus réel de sites d'installateurs HVAC québécois.
+#
+# SCHÉMA PRÉVU POUR D'AUTRES MARCHÉS
+# ------------------------------------
+# Les catégories ci-dessous (`licence_professionnelle`, `programme_subvention`)
+# sont volontairement génériques : un futur `certifications_romandie.yaml`
+# ou `certifications_france.yaml` réutiliserait les MÊMES clés, avec des
+# motifs propres à leur juridiction (RGE en France, suissetec en Suisse) —
+# chargés via `diagnostic/config.py::load_certifications(marche)`. Aucun
+# changement de code n'est nécessaire pour ajouter un second marché.
+#
+# Limite assumée de ce lot : la résolution effective (quel fichier charger
+# pour quelle fiche) est câblée par défaut sur "quebec" dans
+# `vault_runner.py`/`run_diagnostic.py` — seul marché ayant un ICP réel dans
+# ce dépôt à ce jour. Voir le commentaire de
+# `MARCHE_CERTIFICATIONS_PAR_DEFAUT` dans ces deux modules.
+#
+# Trois états, jamais deux (legitimite.py) : une catégorie absente de ce
+# fichier, ou une liste vide, produit `None` (inconnu) — jamais `False`.
+
+licence_professionnelle:
+  # RBQ (Régie du bâtiment du Québec) : licence obligatoire pour tout
+  # entrepreneur en installation CVAC au Québec.
+  - "licence rbq"
+  - "rbq :"
+  - "numéro de licence rbq"
+  - "no rbq"
+  - "maître mécanicien en tuyauterie"
+  - "maitre mecanicien en tuyauterie"
+
+programme_subvention:
+  # Programmes de subvention/rénovation énergétique en vigueur au Québec —
+  # une mention active suggère une entreprise qui investit dans sa
+  # crédibilité réglementaire. Liste à réviser régulièrement : ces
+  # programmes changent de nom au gré des budgets gouvernementaux.
+  - "chauffez vert"
+  - "rénoclimat"
+  - "renoclimat"
+  - "écoperformance"
+  - "ecoperformance"
+
+# Prévu pour d'autres marchés (schéma, contenu vide ici — Québec seul dans
+# ce lot) :
+# rge: []              # France : Reconnu Garant de l'Environnement
+# suissetec: []         # Suisse : association professionnelle CVAC

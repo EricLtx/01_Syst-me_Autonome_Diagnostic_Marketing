@@ -15,7 +15,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import yaml
 from pydantic import ValidationError
@@ -275,6 +275,42 @@ class VaultIO:
         sans accéder directement à _journal.
         """
         self._journal(agent, "erreur_pipeline", fiche, "erreur", detail)
+
+    def append_historique(
+        self, slug: str, dimension: str, cle: str, valeur: Any, source: str,
+    ) -> Path:
+        """Ajoute une ligne à l'historique append-only d'une fiche (ADR 0004 D3).
+
+        `vault/40-Historique/<slug>.jsonl` — une ligne JSONL par observation
+        DÉRIVÉE (jamais une valeur brute reconstituable, cf. les Maps
+        Platform Terms qui plafonnent la conservation Places à 30 jours :
+        `avis_bucket`, `cadence_avis_par_mois`, jamais la note/le compte bruts).
+
+        Append-only, comme `runs.log` : un simple `open(path, "a")` suffit,
+        PAS de `os.replace()` — ce n'est pas une réécriture du corollaire de
+        l'invariant #1 (aucun autre module n'appelle `os.replace()`), c'est
+        le même mécanisme que `_journal()` déjà en place, appliqué à un
+        second fichier append-only.
+
+        **Infrastructure posée, non exploitée par les Lots 1/2** (ADR 0004
+        D3) : aucun collecteur actuel n'a besoin de comparer deux lectures
+        successives. Ce mécanisme existe pour ne pas découvrir le besoin
+        d'historisation a posteriori, sous contrainte (comme le TTL Places
+        30 jours l'a déjà été).
+        """
+        path = self.vault / "40-Historique" / f"{slug}.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "dimension": dimension,
+            "cle": cle,
+            "valeur": valeur,
+            "source": source,
+        }
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        self._journal("vault_io", "append_historique", f"{slug}.jsonl", "ok", f"{dimension}.{cle}")
+        return path
 
     def write_system_note(self, filename: str, content: str) -> Path:
         """Écrit une note système dans vault/90-Systeme/. Atomique, journalisée."""

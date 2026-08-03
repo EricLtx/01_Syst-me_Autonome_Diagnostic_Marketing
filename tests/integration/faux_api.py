@@ -71,10 +71,17 @@ class Entreprise:
     rating: float | None
     nb_avis: int
     personnes: tuple[dict, ...]  # réponses Apollo brutes (champs en trop volontaires)
+    # ADR 0004 (axe intention) : recrutement affiché sur la page d'accueil +
+    # page carrières datée. Défaut False/12 : n'affecte AUCUNE entreprise
+    # existante (HTML byte-identique quand recrute=False, cf. html_site()).
+    recrute: bool = False
+    jours_offre: int = 12
 
 
-# 8 entreprises : 5 « pauvres » (beaucoup de failles → matière à diagnostic),
-# 2 « correctes » (contre-exemple), 1 sans contact éligible chez Apollo.
+# 9 entreprises : 5 « pauvres » (beaucoup de failles → matière à diagnostic),
+# 2 « correctes » (contre-exemple), 1 sans contact éligible chez Apollo,
+# +1 « pauvre » recruteuse (ADR 0004, preuve de discrimination de l'axe
+# intention à besoin égal).
 CATALOGUE: tuple[Entreprise, ...] = (
     Entreprise(
         slug="climatisation-tremblay",
@@ -211,6 +218,27 @@ CATALOGUE: tuple[Entreprise, ...] = (
              "email": "denis@aeroclim-beauce.test", "email_status": "likely"},
         ),
     ),
+    # ADR 0004 (axe intention) : entreprise « pauvre » en tous points
+    # identique aux autres pour le BESOIN (même gabarit html_site()), mais
+    # affichant un recrutement daté — la twin de contrôle pour la preuve de
+    # discrimination est n'importe quelle autre entreprise "pauvre" ci-dessus
+    # (recrute=False par défaut, HTML byte-identique à avant cette ADR).
+    Entreprise(
+        slug="thermo-marchand",
+        nom="Thermo Marchand",
+        titre_serp="Thermo Marchand | Chauffage et climatisation à Rimouski",
+        ville="Rimouski",
+        ip="127.0.0.10",
+        qualite="pauvre",
+        rating=3.2,
+        nb_avis=6,
+        personnes=(
+            {"first_name": "Sophie", "last_name": "Marchand", "title": "Propriétaire",
+             "email": "sophie@thermo-marchand.test", "email_status": "verified"},
+        ),
+        recrute=True,
+        jours_offre=12,
+    ),
 )
 
 PAR_SLUG: dict[str, Entreprise] = {e.slug: e for e in CATALOGUE}
@@ -272,15 +300,46 @@ ventilation et chauffage a {ent.ville} et partout dans la region de Quebec.</p>
 </body>
 </html>
 """
+    # ADR 0004 (axe intention) : ajout STRICTEMENT conditionnel — quand
+    # `ent.recrute` est False (défaut, TOUTES les entreprises antérieures à
+    # cette ADR), la ligne suivante est absente et le gabarit ci-dessous
+    # produit un HTML byte-identique à avant cette ADR (aucune régression
+    # possible sur les tests existants qui exercent ce gabarit).
+    lignes = [
+        "<html>",
+        "<head>",
+        f"<title>{ent.nom}</title>",
+        "</head>",
+        "<body>",
+        f"<h1>{ent.nom}</h1>",
+        f"<p>Installation de thermopompe, climatisation et chauffage à {ent.ville}.</p>",
+        "<p>Nous desservons la région depuis 1998.</p>",
+    ]
+    if ent.recrute:
+        lignes.append(
+            f'<p><a href="/sites/{ent.slug}/carrieres">Carrières</a> : '
+            "nous recrutons ! Rejoignez notre équipe, devenez installateur "
+            "ou technicien CVAC.</p>"
+        )
+    lignes += [f"<p>© 2017 {ent.nom}</p>", "</body>", "</html>", ""]
+    return "\n".join(lignes)
+
+
+def html_carrieres(ent: Entreprise) -> str:
+    """Page carrières d'une entreprise « recruteuse » (ADR 0004, Lot 2).
+
+    Contient un <time> daté, extrait par
+    `WebsiteCollector._try_page_carrieres()` lors de l'escalade (un seul
+    appel de plus, déclenché uniquement si `offre_detectee` est vrai et
+    qu'un lien carrières a été repéré sur la page d'accueil).
+    """
+    date_offre = (date.today() - timedelta(days=ent.jours_offre)).isoformat()
     return f"""<html>
-<head>
-<title>{ent.nom}</title>
-</head>
+<head><title>Carrières — {ent.nom}</title></head>
 <body>
-<h1>{ent.nom}</h1>
-<p>Installation de thermopompe, climatisation et chauffage à {ent.ville}.</p>
-<p>Nous desservons la région depuis 1998.</p>
-<p>© 2017 {ent.nom}</p>
+<h1>Carrières chez {ent.nom}</h1>
+<p>Poste à pourvoir : installateur/technicien CVAC.</p>
+<time datetime="{date_offre}">Offre publiée</time>
 </body>
 </html>
 """
@@ -583,6 +642,16 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._envoyer_json({"erreur": "sitemap absent"}, 404)
             return self._envoyer_texte(xml, mime="application/xml; charset=utf-8")
 
+        if chemin.startswith("/sites/") and chemin.endswith("/carrieres"):
+            # ADR 0004 (Lot 2) : page carrières — UNIQUEMENT pour une
+            # entreprise « recruteuse » (recrute=True), 404 sinon (même
+            # discipline que /sitemap.xml pour les sites non "correcte").
+            slug = chemin[len("/sites/"):-len("/carrieres")].strip("/")
+            ent = PAR_SLUG.get(slug)
+            if ent is None or not ent.recrute:
+                return self._envoyer_json({"erreur": f"page carrières inconnue : {slug}"}, 404)
+            return self._envoyer_texte(html_carrieres(ent))
+
         if chemin.startswith("/sites/"):
             slug = chemin.removeprefix("/sites/").strip("/")
             ent = PAR_SLUG.get(slug)
@@ -695,7 +764,7 @@ class ServeurFauxApi:
             return None
         dossier = Path(tempfile.mkdtemp(prefix="faux_api_tls_"))
         cert, cle = dossier / "cert.pem", dossier / "key.pem"
-        ips = ",".join(f"IP:127.0.0.{i}" for i in range(1, 10))
+        ips = ",".join(f"IP:127.0.0.{i}" for i in range(1, 12))
         try:
             subprocess.run(
                 ["openssl", "req", "-x509", "-newkey", "rsa:2048",

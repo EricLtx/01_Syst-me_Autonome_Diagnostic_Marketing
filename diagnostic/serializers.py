@@ -35,12 +35,25 @@ def diagnostic_to_fiche(diag: Diagnostic, fiche: FicheProspect) -> FicheProspect
                     diag.failles[0].preuve if diag.failles else
                     diag.accroche) or None
 
+    # Dériver l'axe intention (ADR 0004) : contrainte dure symétrique de
+    # celle de signal_chaud — jamais dérivé d'un signal inconnu. Ici,
+    # jamais dérivé d'un événement non `citable` (D6) : certains signaux ne
+    # servent qu'à prioriser en interne et seraient désastreux à prononcer
+    # devant le prospect. `evenements_intention` est déjà trié du plus
+    # récent au plus ancien (diagnostic/intent.py) : le premier événement
+    # citable est la meilleure candidate pour l'accroche.
+    citables = [e for e in diag.evenements_intention if e.citable]
+    evenement_principal = citables[0] if citables else None
+
     return fiche.model_copy(update={
         "score_global": score,
         "gaps_majeurs": gaps,
         "date_diagnostic": date.today(),
         "signal_chaud": signal_chaud,
         "accroche": diag.accroche or None,
+        "signal_intention": evenement_principal.preuve if evenement_principal else None,
+        "date_intention": evenement_principal.date_evenement if evenement_principal else None,
+        "intention_expire_le": evenement_principal.expire_le if evenement_principal else None,
     })
 
 
@@ -88,6 +101,30 @@ def diagnostic_to_rapport_md(diag: Diagnostic) -> str:
     else:
         gaps_table = "| — | — | Aucun gap majeur détecté |"
 
+    # Section « Signaux d'intention » (ADR 0004) : rendue seulement si au
+    # moins un événement a été détecté — un axe non configuré pour ce
+    # secteur ne doit pas afficher une section vide et intrigante. Un
+    # événement non `citable` est affiché ici (usage interne, opérateur
+    # humain) mais NE PEUT PAS alimenter `signal_intention` (serializers.py,
+    # diagnostic_to_fiche) : la contrainte dure ne s'applique qu'à la phrase
+    # envoyée au prospect, pas à ce rapport de pilotage interne.
+    section_intention = ""
+    if diag.evenements_intention:
+        lignes_intention = [
+            f"| `{e.dimension}` | {e.intensite} | {e.fiabilite} | "
+            f"{'oui' if e.citable else 'non'} | {e.expire_le.isoformat()} | {e.preuve} |"
+            for e in diag.evenements_intention
+        ]
+        section_intention = f"""
+---
+
+## Signaux d'intention
+
+| Dimension | Intensité | Fiabilité | Citable | Expire le | Observation |
+|---|---|---|---|---|---|
+{chr(10).join(lignes_intention)}
+"""
+
     return f"""\
 ---
 type: rapport
@@ -121,7 +158,7 @@ score_global: {score}
 | Dimension | Gravité | Observation |
 |---|---|---|
 {gaps_table}
-
+{section_intention}
 ---
 
 ## Accroche d'outreach

@@ -147,10 +147,31 @@ class TestDiagnosticContratJSON:
         assert "signal_chaud" not in d
 
     def test_to_json_contrat_inchange(self):
+        """Verrouille le contrat JSON de Diagnostic — MIS À JOUR (ADR 0004).
+
+        L'intention de ce test (§13.3) est de garantir que `signal_chaud`/
+        `accroche` (dérivés côté FicheProspect par serializers.py) ne
+        fuient JAMAIS dans Diagnostic — c'est ce que verrouillent
+        `test_to_dict_na_pas_signal_chaud` et
+        `test_diagnostic_naccroche_pas_signal_chaud` ci-dessus/dessous, et ça
+        reste vrai. L'égalité stricte sur l'ensemble des clés, en revanche,
+        est plus large que cette intention : elle interdirait tout futur
+        champ additif sur Diagnostic, ce que l'ADR 0004 fait légitimement
+        via `evenements_intention` (liste d'événements d'intention datés,
+        jamais un score — voir diagnostic/models.py::EvenementIntention).
+        L'ADR affirme l'ajout « strictement additif » et le vérifie contre
+        test_j1_smoke.py, mais n'avait pas anticipé cette égalité stricte
+        ici : ce test est donc mis à jour pour refléter le nouveau contrat
+        (ajout, pas suppression), conformément à la règle du projet qui
+        exige une justification explicite plutôt qu'un contournement muet.
+        """
         diag = _diag(failles=[Gap("web", "haute", "Proof")])
         import json
         d = json.loads(diag.to_json())
-        assert set(d.keys()) == {"entreprise", "signaux", "scores", "failles", "accroche", "mini_audit", "meta"}
+        assert set(d.keys()) == {
+            "entreprise", "signaux", "scores", "failles", "accroche",
+            "mini_audit", "meta", "evenements_intention",
+        }
 
     def test_diagnostic_naccroche_pas_signal_chaud(self):
         diag = _diag()

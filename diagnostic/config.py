@@ -45,6 +45,59 @@ def load_knowledge(persona: str | int = 1) -> dict[str, Any]:
     return {}
 
 
+def load_rubrique_intention(persona: str | int = 1) -> dict[str, Any] | None:
+    """Charge knowledge/intent_{secteur}.yaml (ADR 0004 — axe intention).
+
+    Retourne `None`, PAS `{}`, si le fichier est absent : distinction
+    nécessaire entre « ce secteur n'a pas d'axe intention » (repli propre,
+    `pipeline.py` n'évalue rien) et « axe vide » (erreur de configuration,
+    un fichier présent mais sans dimensions serait un bug à signaler, pas un
+    silence poli).
+    """
+    path = KNOWLEDGE_DIR / f"intent_{_secteur_label(persona)}.yaml"
+    if not path.exists():
+        return None
+    return yaml.safe_load(path.read_text(encoding="utf-8"))
+
+
+def load_vocabulaire_intention(persona: str | int = 1) -> dict[str, Any]:
+    """Vocabulaire de recrutement par secteur (ADR 0004).
+
+    Même contrat que `load_vocabulaire` : fichier absent → {}, JAMAIS une
+    exception. Un secteur sans lexique documenté dégrade vers `None` dans
+    `WebsiteCollector.offre_detectee` (anti-fuite B5), pas vers un plantage.
+    """
+    path = KNOWLEDGE_DIR / f"vocabulaire_intention_{_secteur_label(persona)}.yaml"
+    if path.exists():
+        return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {}
+
+
+def load_certifications(marche: str) -> dict[str, list[str]] | None:
+    """Motifs de légitimité/conformité par MARCHÉ (ADR 0004 — `legitimite.py`).
+
+    Distinct des autres chargeurs de ce module : une licence professionnelle
+    (RBQ au Québec, RGE en France, suissetec en Suisse) est propre à une
+    juridiction, pas à un secteur d'activité — c'est pourquoi la clé est le
+    marché, pas `secteur_id`. Retourne `None` si le fichier est absent (même
+    distinction que `load_rubrique_intention` : « marché non documenté » ≠
+    « aucun motif »).
+
+    Limite assumée de ce lot : la résolution effective (quel fichier charger
+    pour quelle fiche) reste câblée par défaut au marché Québec dans
+    `vault_runner.py`/`run_diagnostic.py`, seul marché ayant un ICP réel dans
+    ce dépôt à ce jour — même simplification déjà acceptée pour
+    `vocabulaire_offre` (partagé par secteur, pas par marché). Le schéma
+    (cette fonction, le fichier `certifications_{marche}.yaml`) est prêt pour
+    un second marché sans aucun changement de code : il suffit d'ajouter le
+    fichier et d'appeler `load_certifications("romandie")` au bon endroit.
+    """
+    path = KNOWLEDGE_DIR / f"certifications_{marche}.yaml"
+    if not path.exists():
+        return None
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+
+
 def load_vocabulaire(persona: str | int = 1) -> dict[str, Any]:
     """Vocabulaire lexical par secteur (ADR 0003 — anti-fuite B5).
 

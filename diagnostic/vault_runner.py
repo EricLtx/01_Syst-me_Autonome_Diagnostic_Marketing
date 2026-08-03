@@ -20,16 +20,34 @@ from pathlib import Path
 from typing import Callable
 
 from diagnostic.collectors.gbp import GbpCollector
+from diagnostic.collectors.legitimite import LegitimiteCollector
 from diagnostic.collectors.reviews import ReviewsCollector
 from diagnostic.collectors.seo import SeoCollector
 from diagnostic.collectors.social import SocialCollector
 from diagnostic.collectors.website import WebsiteCollector
-from diagnostic.config import load_icp, load_knowledge, load_rubrique, load_vocabulaire
+from diagnostic.config import (
+    load_certifications,
+    load_icp,
+    load_knowledge,
+    load_rubrique,
+    load_rubrique_intention,
+    load_vocabulaire,
+    load_vocabulaire_intention,
+)
 from diagnostic.models import Company
 from diagnostic.pipeline import DiagnosticPipeline
 from diagnostic.serializers import diagnostic_to_fiche, diagnostic_to_rapport_md
 from diagnostic.vault_io import VaultIO
 from diagnostic.vault_schema import FicheProspect
+
+# Marché par défaut pour la résolution des motifs de légitimité
+# (`legitimite.py`, ADR 0004) : seul marché ayant un ICP réel dans ce dépôt
+# à ce jour (persona1-quebec.yaml). Une licence professionnelle (RBQ, RGE,
+# suissetec...) est propre à une juridiction, pas à un secteur d'activité —
+# voir `config.py::load_certifications` pour le schéma prévu pour d'autres
+# marchés. Limite assumée : ce câblage ne varie pas encore par fiche, même
+# simplification déjà acceptée pour `vocabulaire_offre` (partagé par secteur).
+MARCHE_CERTIFICATIONS_PAR_DEFAUT = "quebec"
 
 
 def secteur_id_for_fiche(fiche: FicheProspect) -> str:
@@ -57,17 +75,24 @@ def make_pipeline_for_secteur(secteur_id: str, api_io=None) -> DiagnosticPipelin
     run.
     """
     vocabulaire = (load_vocabulaire(secteur_id) or {}).get("mots_offre")
+    vocabulaire_intention = (load_vocabulaire_intention(secteur_id) or {}).get("mots_recrutement")
+    motifs_legitimite = load_certifications(MARCHE_CERTIFICATIONS_PAR_DEFAUT)
     return DiagnosticPipeline(
         collectors=[
-            WebsiteCollector(vocabulaire_offre=vocabulaire),
+            WebsiteCollector(
+                vocabulaire_offre=vocabulaire,
+                vocabulaire_intention=vocabulaire_intention,
+            ),
             GbpCollector(),
             ReviewsCollector(),
             SeoCollector(),
             SocialCollector(),
+            LegitimiteCollector(motifs=motifs_legitimite),
         ],
         rubrique=load_rubrique(secteur_id),
         knowledge=load_knowledge(secteur_id),
         api_io=api_io,
+        rubrique_intention=load_rubrique_intention(secteur_id),
     )
 
 
@@ -145,6 +170,9 @@ def run_vault_mode(
                 rapport=wikilink,
                 signal_chaud=fiche_maj.signal_chaud,
                 accroche=fiche_maj.accroche,
+                signal_intention=fiche_maj.signal_intention,
+                date_intention=fiche_maj.date_intention,
+                intention_expire_le=fiche_maj.intention_expire_le,
             )
 
             # Transition d'état (journalisée dans vault_io.transition)

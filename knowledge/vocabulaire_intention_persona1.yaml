@@ -1,0 +1,56 @@
+# knowledge/vocabulaire_intention_persona1.yaml
+#
+# [À CALIBRER — hypothèse, non mesurée]
+#
+# Lexique de détection du recrutement pour l'axe INTENTION (ADR 0004), pas
+# du besoin. Brouillon de travail rédigé pour rendre le Lot 1/2 exécutable
+# et testable : la consultante (ou agent-produit) doit le réviser avant tout
+# usage commercial réel. Aucune valeur ici n'a été mesurée sur un corpus réel
+# de sites d'installateurs HVAC — c'est un point de départ, pas un résultat.
+#
+# CE QUE DIT (ET NE DIT PAS) LA RECHERCHE (ADR 0004, §Fondement théorique) :
+# l'offre d'emploi est le signal externe le mieux étayé pour anticiper des
+# variables d'entreprise (Gutierrez, Lourie, Nekrasov & Shevlin, Management
+# Science 2020, [NON LU] — établi sur des sociétés COTÉES, pas des PME de
+# 5-50 salariés). AUCUNE source académique identifiée n'établit qu'une PME
+# qui recrute est plus encline à acheter du conseil en branding — c'est
+# l'hypothèse commerciale de la consultante (voir intent_persona1.yaml,
+# champ `hypothese`), pas un fait validé par la littérature.
+#
+# PRIORITÉ AUX RÔLES DE PRODUCTION (D7) : une embauche marketing/communication
+# est rare dans une PME de cette taille (peu exploitable comme signal
+# récurrent). Une embauche de production (installateur, technicien) est
+# fréquente, datée, publique, gratuite, et crée une obligation de répondre à
+# la demande — c'est le signal à privilégier. Les intitulés
+# marketing/communication sont conservés en second bucket, volume attendu
+# plus rare, jugement commercial plus prudent (voir `intent_persona1.yaml`,
+# intensité déclarée par check).
+#
+# Limite assumée de ce lot : un seul signal booléen `offre_detectee` couvre
+# TOUTE la liste ci-dessous (pas de distinction production/marketing au
+# niveau du collecteur) — un raffinement futur pourrait scinder en deux
+# signaux si le pilote montre que la distinction est commercialement utile.
+
+mots_recrutement:
+  # -- rôles de production (priorité, D7) --
+  - "nous recrutons"
+  - "nous embauchons"
+  - "rejoignez notre équipe"
+  - "offre d'emploi"
+  - "offres d'emploi"
+  - "poste à pourvoir"
+  - "postes à pourvoir"
+  - "carrières"
+  - "carrière chez nous"
+  - "installateur recherché"
+  - "technicien cvac recherché"
+  - "apprenti frigoriste"
+  - "monteur en climatisation"
+
+  # -- second bucket : marketing / communication, poids commercial plus
+  #    faible, volume attendu plus rare (D7) --
+  - "chargé de communication"
+  - "chargée de communication"
+  - "responsable marketing"
+  - "coordonnateur marketing"
+  - "coordonnatrice marketing"

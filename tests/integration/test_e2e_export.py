@@ -64,13 +64,23 @@ class TestFluxExport:
         assert "Froid Boréal" not in boites             # rejete
 
     def test_colonnes_kemana_et_contenu(self, vault_seme, chemins, monkeypatch, tmp_path):
+        """Liste de colonnes MISE À JOUR (ADR 0004, volet export du Lot 3) :
+
+        3 colonnes intention purement additives (« Signal intention »,
+        « Date intention », « Intention expire ») s'insèrent avant
+        « Statut » — voir knowledge/export_kemana.yaml. Aucune colonne
+        existante retirée ni renommée ; changement de contrat légitime et
+        documenté, pas un contournement silencieux.
+        """
         sortie = tmp_path / "kemana.csv"
         _exporter(monkeypatch, chemins, "--out", str(sortie))
 
         lignes = _lire_csv(sortie)
         entetes = list(lignes[0].keys())
         assert entetes == ["Nom", "Titre", "Boîte", "ICP", "Email", "Source email",
-                           "Site", "Score", "Signal chaud", "Statut"]
+                           "Site", "Score", "Signal chaud",
+                           "Signal intention", "Date intention", "Intention expire",
+                           "Statut"]
 
         rive_sud = next(l for l in lignes if l["Boîte"] == "Clim Rive-Sud")
         assert rive_sud["Nom"] == "Karine Meunier"

@@ -1,0 +1,86 @@
+# knowledge/intent_persona1.yaml
+#
+# [À CALIBRER — hypothèse, non mesurée]
+#
+# Rubrique d'INTENTION pour le persona 1 (installateur HVAC), ADR 0004.
+# Brouillon de travail rédigé pour rendre les Lots 1/2 exécutables et
+# testables : la consultante (ou agent-produit) doit le réviser avant tout
+# usage commercial réel (demi-vies, fenêtres de péremption, intensités —
+# tout est ici un point de départ raisonnable, pas un résultat mesuré).
+#
+# CECI N'EST PAS UNE RUBRIQUE DE BESOIN (rubric_persona1.yaml).
+# ---------------------------------------------------------------
+# `diagnostic/intent.py::evaluer_intention()` ne calcule AUCUN score à
+# partir de ce fichier : il rejoue chaque check et produit, au plus, un
+# `EvenementIntention` par check qui passe ET qui est daté. Il n'y a donc
+# PAS de `poids` (ni de `points`, `gap`, `gravite`) dans ce schéma : ce sont
+# des artefacts de `ScoringEngine`, qui n'est JAMAIS appelé sur ce fichier
+# (ADR 0004, décision D4 — corrigée après la note de cadrage CMO : « un
+# score n'a pas de date, or la date EST l'information »).
+#
+# SCHÉMA D'UN CHECK D'INTENTION
+# ------------------------------
+#   signal        : chemin "collecteur.cle" (même syntaxe que le besoin)
+#   op             : is_true | gte | lte | exists | non_vide (mêmes opérateurs)
+#   value          : si l'opérateur l'exige (gte/lte)
+#   nature         : "evenement" — un check SANS ce champ (ou nature: etat)
+#                    est ignoré par evaluer_intention() (B1 : les états
+#                    n'ont rien à faire côté intention)
+#   date_signal    : chemin vers la date brute (chaîne ISO) qui date le fait.
+#                    Si cette date résout à None, l'événement est ÉCARTÉ —
+#                    jamais dégradé en état permanent (D2).
+#   fenetre_jours  : péremption = date_evenement + fenetre_jours (calculée
+#                    UNE FOIS, stockée dans EvenementIntention.expire_le).
+#   intensite      : "haute" | "moyenne" | "basse" — jugement commercial.
+#   citable        : true SEULEMENT si le prospect a publié ce fait pour
+#                    être vu (D6). Défaut false si absent — sécurité par
+#                    défaut, jamais citable sans déclaration explicite.
+#   fiabilite      : axe UNIQUE de fiabilité de source (D6), vocabulaire
+#                    fermé : A_registre | B_site_officiel | C_api_commerciale
+#                    | D_derive | E_serp_non_confirme | F_synthese_llm
+#                    (F_synthese_llm n'est jamais utilisé pour un fait : le
+#                    LLM ne collecte jamais).
+#   preuve         : gabarit de phrase factuelle, interpolé avec {jours}
+#                    (nombre de jours écoulés depuis date_evenement).
+#
+# HYPOTHÈSE COMMERCIALE — À VALIDER PAR LE PILOTE, PAS UN FAIT
+# --------------------------------------------------------------
+# Aucune source académique identifiée (ADR 0004, note de recherche
+# documentaire, réserve [NON LU] : aucun texte intégral n'a pu être ouvert
+# dans la session qui a produit l'ADR) n'établit qu'une PME qui recrute en
+# production est plus encline à investir dans le conseil en branding.
+# C'est un jugement commercial de la consultante, déclaré explicitement
+# ci-dessous (`hypothese:`), jamais assumé par le code — même honnêteté que
+# `energie_wh`/`co2e_g` en GreenIT (ADR 0002).
+
+dimensions:
+  recrutement_production:
+    hypothese: >
+      Une PME qui embauche en production (installateur, technicien CVAC,
+      monteur) a besoin de remplir un carnet de commandes plus grand, donc
+      peut être disponible pour investir en marketing/branding. Hypothèse
+      de la consultante, non établie par la littérature académique
+      identifiée — à valider par le pilote, jamais présentée comme un fait.
+    checks:
+      - signal: website.offre_detectee
+        op: is_true
+        nature: evenement
+        date_signal: website.offre_detectee_date
+        fenetre_jours: 90   # [À CALIBRER] — ordre de grandeur : le temps
+                             # habituel pour pourvoir un poste technique avant
+                             # que l'offre ne perde sa valeur de signal
+        intensite: haute
+        citable: true        # l'entreprise a publié elle-même l'offre
+        fiabilite: B_site_officiel
+        preuve: "Recrute activement (offre publiée il y a {jours} jours) — voir sa page carrières"
+
+# Bloc informatif pour scripts/benchmark_intention.py (illustration d'une
+# décroissance CONTINUE, PAS utilisée par intent.py/evaluer_intention() —
+# voir diagnostic/collectors/_decay.py pour la mise en garde complète sur
+# la nature "convention d'outillage, pas résultat empirique" de cette forme
+# fonctionnelle).
+decroissance:
+  demi_vie_jours: 45   # [À CALIBRER]
+  plancher: 0.1         # [À CALIBRER] — un recrutement vieux de plusieurs
+                        # mois garde une valeur informative résiduelle,
+                        # jamais nulle

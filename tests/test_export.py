@@ -122,12 +122,21 @@ class TestSelection:
 
 class TestMappingKemana:
     def test_charger_schema_reel(self):
+        """Nombre de colonnes MIS À JOUR (ADR 0004, volet export du Lot 3).
+
+        Le schéma passe de 10 à 13 colonnes : 3 colonnes intention purement
+        additives (« Signal intention », « Date intention », « Intention
+        expire ») — voir knowledge/export_kemana.yaml. Aucune colonne
+        existante n'est retirée ni renommée ; c'est un changement de
+        contrat légitime, documenté ici plutôt que contourné en silence.
+        """
         colonnes = charger_schema_kemana(SCHEMA_REEL)
-        assert len(colonnes) == 10
+        assert len(colonnes) == 13
         entetes = [c["entete"] for c in colonnes]
         assert "Nom" in entetes
         assert "Signal chaud" in entetes
         assert "Email" in entetes
+        assert "Signal intention" in entetes
 
     def test_champ_inexistant_leve_valueerror(self, tmp_path):
         bad = tmp_path / "bad.yaml"
