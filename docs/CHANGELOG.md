@@ -28,6 +28,34 @@ du Lot 3), après un commit de sauvegarde intermédiaire `0f480b8` explicitement
 étiqueté « BRANCHE ROUGE » (1 test cassé pendant l'écriture, corrigé avant
 livraison — voir « Corrigé » ci-dessous).
 
+> ⚠️ **Rectification d'attribution — le message de `cc99302` sur-attribue.**
+> Son message liste sous l'en-tête « Code » cinq fichiers (`diagnostic/models.py`,
+> `diagnostic/intent.py`, `diagnostic/collectors/_decay.py`,
+> `diagnostic/collectors/legitimite.py`, `diagnostic/collectors/website.py`)
+> qui **ne figurent pas dans son diff** : `git show --name-only cc99302` ne les
+> contient pas. Ils avaient été committés en amont — `models.py` et `intent.py`
+> dans `ba750fe` (étiqueté `docs:` par erreur, capturés par un `git add -A`
+> lancé pendant qu'un agent écrivait), `_decay.py`, `legitimite.py` et
+> l'extension de `website.py` dans `0f480b8`. **`cc99302` est le commit de
+> *stabilisation*** (2 tests rouges → verts, tests unitaires, YAML, banc
+> d'essai), **pas le commit d'*introduction*** de ces cinq fichiers.
+>
+> Aucune propriété du système décrite dans ce message n'est fausse : trois
+> états, non-appel à `ScoringEngine.score()`, décroissance jamais câblée dans
+> le scoring, `scoring.py` intouché — tout a été re-vérifié indépendamment et
+> tient. L'écart porte uniquement sur *quel commit* introduit *quel fichier*.
+>
+> Cause racine, consignée parce qu'elle s'est déjà produite (`f36c276`) : le
+> message a été rédigé depuis le **rapport final de l'agent d'implémentation**,
+> qui énumérait tout ce qu'il avait touché sur l'ensemble du chantier, au lieu
+> d'être rédigé depuis `git diff --cached`. **Un message de commit se rédige
+> depuis le diff indexé, jamais depuis un rapport.** Détecté par l'assertion
+> A13 de la porte de revue (cohérence message ⇄ diff réel), qui a fait chuter
+> l'itération à 92,9 % et déclenché une relance.
+>
+> L'historique n'est pas réécrit (`--amend` exclu : `cc99302` était déjà poussé
+> et référencé). La correction vit ici, dans le journal.
+
 ### Ajouté
 
 - **Axe `intention` — événement daté et périssable, jamais un second score**
