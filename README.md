@@ -280,7 +280,7 @@ raison pour laquelle les coûts et les écritures sont intégralement traçables
 | Grand livre | `api_usage.log` (coûts) · `runs.log` (écritures vault) |
 
 **Invariants de sécurité** — détail et preuves dans
-`docs/architecture/invariants.md` (21 invariants, chacun avec sa commande de
+`docs/architecture/invariants.md` (22 invariants, chacun avec sa commande de
 contrôle) :
 
 - Toute écriture dans le vault est **atomique** (`tmp` + `os.replace()`) et

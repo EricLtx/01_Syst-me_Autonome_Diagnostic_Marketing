@@ -646,6 +646,64 @@ le premier nœud du DAG.
 
 ---
 
+## I22 — Trois états : un signal non observé n'est jamais un échec
+
+**Invariant.** Tout signal vaut `ok`, `echec` ou **`inconnu`**. Il ne vaut
+`False` **que si un fait a été positivement observé et jugé absent**. Sans
+observation possible — pas de clé API, source injoignable, échec technique,
+vocabulaire métier non configuré pour le secteur — il vaut `None`. Un signal
+`None` ne produit **ni point, ni dénominateur, ni faille**, et le score global
+est renormalisé sur les seules dimensions réellement observées.
+
+**Pourquoi.** C'est la règle la plus structurante du projet, et elle a été
+écrite après que le même défaut se soit manifesté **trois fois en une journée
+à trois endroits différents** — toujours selon le même motif : *de la
+connaissance métier, ou un échec technique, produisant un faux négatif présenté
+comme une observation*.
+
+| Occurrence | Mécanisme | Conséquence mesurée |
+|---|---|---|
+| `_check_passes` comptait `None` comme un échec | sans clé Places, `gbp`/`reviews` valent `None` | **45 % de la pondération fabriquée à zéro** ; une entreprise au site irréprochable plafonnait à 27,5/100 ; **une seule accroche distincte pour tous les prospects** |
+| `gbp.py`/`reviews.py` lisaient `{"status":"REQUEST_DENIED","results":[]}` comme « aucune fiche » | HTTP 200 sur un refus d'authentification | **deux failles de gravité haute fabriquées** sur le chemin de production, dont celle qui alimentait l'accroche |
+| `OFFRE_KEYWORDS` codait le vocabulaire HVAC en dur | un collecteur générique portait un lexique sectoriel | pour un dentiste, **faux négatif de 25 points en gravité haute** |
+
+Violer cet invariant ne dégrade pas le score : **il fabrique une affirmation
+fausse et l'envoie à un prospect**. C'est la seule règle du projet dont
+l'infraction produit directement un préjudice commercial.
+
+**Comment c'est tenu.**
+- `_check_passes` (`diagnostic/scoring.py`) retourne `None` dès que la valeur
+  est `None`, pour **tous** les opérateurs.
+- `ScoringEngine.score()` ignore les checks inconnus dans le numérateur **et**
+  le dénominateur, publie `scores["_couverture"]`, et n'émet aucun `Gap`.
+- `diagnostic/collectors/_places.py` distingue une **observation** (`OK`,
+  `ZERO_RESULTS`) d'un **échec technique** (`REQUEST_DENIED`,
+  `OVER_QUERY_LIMIT`, `INVALID_REQUEST`, `UNKNOWN_ERROR`, absence de `status`).
+  Conservateur par construction : en cas de doute, `None`.
+- `social.py` distingue « site consulté, aucun lien social » (`[]`) de « site
+  jamais consulté » (`None`).
+- Le vocabulaire métier vit en donnée (`knowledge/vocabulaire_{secteur}.yaml`) ;
+  absent, il produit `None`, jamais `False` (acquis de l'ADR 0003).
+
+**Comment c'est testé.**
+```bash
+python -m pytest tests/test_scoring.py -q            # 3 états, renormalisation, couverture
+python -m pytest tests/test_collectors_phase_d.py -q # échec technique vs observation négative
+# Chemin de PRODUCTION, sans clé : gbp/reviews doivent valoir null,
+# et aucune faille ne doit mentionner établissement ou avis.
+python run_diagnostic.py --nom X --url https://exemple.test --json | \
+  python -c "import json,sys; d=json.load(sys.stdin); print(d['signaux']['gbp'], d['signaux']['reviews'])"
+```
+
+> **Leçon de méthode, apprise à ses dépens.** Ce défaut a d'abord été « corrigé »
+> au niveau du moteur, prouvé par des tests unitaires, puis **rouvert en
+> production** : le chemin réel injecte toujours un `api_io`, et les collecteurs
+> partaient en réseau pour recevoir un refus qu'ils interprétaient comme une
+> observation. Un invariant de ce type se vérifie **sur le chemin de
+> production**, pas seulement en unitaire.
+
+---
+
 ## Ajouter un invariant
 
 1. Le formuler de façon **falsifiable** (une commande peut dire vrai ou faux).

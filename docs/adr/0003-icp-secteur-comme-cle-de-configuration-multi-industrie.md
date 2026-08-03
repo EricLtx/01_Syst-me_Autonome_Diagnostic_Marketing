@@ -1,8 +1,10 @@
 # ADR 0003 — `icp_id`/`secteur_id` comme clé de configuration multi-industrie
 
-- **Statut** : **proposée** — conception uniquement, aucune ligne de code
-  livrée par cette ADR. À implémenter par `agent-dev-python`, revue par
-  `agent-revue` avant tout commit.
+- **Statut** : **acceptée — implémentée** par le commit `356c361`
+  (Lot 1). L'en-tête indiquait « proposée — aucune ligne de code livrée » ;
+  c'était vrai à la rédaction, faux depuis l'implémentation. Corrigé après
+  vérification : `secteur_id_for_fiche` existe (`vault_runner.py:35`),
+  `persona: int | None`, `marche: str` validé par slug.
 - **Date** : 2026-08-02
 - **Remplace** : —
 - **Remplacée par** : —

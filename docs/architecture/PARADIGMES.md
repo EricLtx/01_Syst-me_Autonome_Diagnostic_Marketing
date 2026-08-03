@@ -9,10 +9,12 @@
 > tout agent qui reprend le projet. Quinze minutes de lecture suffisent à
 > obtenir la carte mentale du système.
 >
-> **Vérifié par exécution le 2026-08-03**, commit de tête `f36c276`, branche
-> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`. Chaque chiffre cité a été
-> re-mesuré juste avant l'écriture de ce document (voir le rapport de
-> l'itération qui l'a produit pour le détail des commandes).
+> **Vérifié par exécution le 2026-08-03**, commit de tête `30cb6cf`, branche
+> `claude/diagnostic-as-is-fonctionnalites-7kzdj4` (l'ADR 0004 a été révisée
+> une première fois par `6ba11e2` avant toute implémentation — voir §P6, qui
+> reflète le design révisé, pas le premier jet de `f36c276`). Chaque chiffre
+> cité a été re-mesuré juste avant l'écriture de ce document (voir le rapport
+> de l'itération qui l'a produit pour le détail des commandes).
 >
 > Règle de lecture : une bascule **implémentée** décrit du code vérifié par
 > `Read`/`Grep`/exécution. Une bascule **`[PROPOSÉ — NON IMPLÉMENTÉ]**` décrit
@@ -124,22 +126,31 @@ python -m pytest tests/test_doc_coherence.py -q
 ## P6 — De l'état à l'événement : le virage intent-based
 
 **Statut : `[PROPOSÉ — NON IMPLÉMENTÉ]`.** ADR [0004](../adr/0004-axe-intention-et-collecteurs-osint-cibles.md),
-commit `f36c276` (le commit ajoute *le document de conception*, aucune ligne de
-code de production). Vérifié : `git show --stat f36c276` ne touche que
-`docs/adr/0004-*.md`.
+commit `f36c276` (premier jet), **révisée le même jour par `6ba11e2`** avant
+toute implémentation. Vérifié : `git show --stat f36c276 6ba11e2` ne touche
+que `docs/adr/0004-*.md` — toujours zéro ligne de code.
+
+**Le premier jet lui-même a été corrigé avant d'être implémenté** — un fait à
+documenter plutôt qu'à masquer, puisque c'est exactement le motif
+d'hallucination que ce projet traque par ailleurs (P7) : le commit `f36c276`
+décrivait dans son message un design déjà corrigé, alors que le *fichier*
+contenait encore la version d'avant (`scores_intention: dict`, 5 occurrences).
+`6ba11e2` répare l'écart entre message et fichier avant qu'une seule ligne de
+code ne s'appuie dessus.
 
 | | |
 |---|---|
-| **Ce qui est proposé** | Un second axe, `score_intention` — un **événement daté** (ex. une offre d'emploi marketing publiée) dont la valeur commerciale **décroît** avec le temps — à côté du score de **besoin** existant, qui est un **état** permanent sans date. |
-| **Pourquoi séparer les deux axes** | Trois raisons vérifiées dans le code actuel, pas une préférence de style (ADR 0004, §1) : (1) le score de besoin est déjà l'inverse d'une note de satisfaction (`rubric_persona1.yaml` : « un score BAS = un prospect CHAUD ») — un signal d'intention, positif par nature, additionné au même total écraserait un sens de variation opposé ; (2) c'est la **même classe de défaut** que P4 — fusionner deux états distincts (temporel / structurel) dans un seul chiffre reproduirait la perte d'information déjà corrigée pour `inconnu`/`echec` ; (3) `scoring.py` n'a aujourd'hui **aucune** notion de date ou de décroissance (vérifié par lecture complète du fichier, 187 lignes). |
-| **Le corollaire vérifié** | La décroissance ne s'applique **qu'aux événements datés**, jamais aux états. Le score de besoin ne décroît pas — un site refait ne change pas de nature tous les mois. |
-| **Ce que la conception interdit explicitement (ADR 0004 §8)** | Fusionner besoin et intention en un score composite, ou en construire un tri de priorité automatique — c'est exactement l'hypothèse que la commanditaire demandait de challenger. Modifier `scoring.py` : la conception prévoit un module séparé (`diagnostic/intent.py`, non écrit) qui **réutilise** `ScoringEngine` sans le toucher — preuve attendue : `git diff diagnostic/scoring.py` vide après implémentation. Introduire un classificateur d'intention par LLM, à quelque stade que ce soit. Ressusciter les collecteurs déjà écartés par l'étude préalable (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via API externe). |
-| ⚠️ **Réserve de méthode, à ne jamais taire** | L'hypothèse « un signal d'intention ouvert améliore la qualification d'un achat de conseil en branding par une PME » est celle de la commanditaire — **aucune source académique ne l'établit** dans les documents produits par ce projet. L'étude préalable (`docs/strategie/ETUDE-osint-api-architecture.md`) documente elle-même, à plusieurs reprises, que `WebFetch` et `curl` ont reçu un **HTTP 403 sur toutes les pages tarifaires officielles** consultées dans cet environnement (serpapi.com, apollo.io, developers.google.com, et d'autres) : **aucun texte intégral n'a été lu**, toutes les références externes de l'étude qui nourrit cette ADR sont vérifiées au seul niveau du résumé de recherche, jamais de la source primaire. Cette limite s'applique par extension à toute affirmation de ce document qui s'appuie sur cette étude. |
-| **Prochaine étape si implémenté** | `agent-dev-python` implémente par lots (Lot 1 : champs additifs sur `Diagnostic`/`FicheProspect`, zéro nouveau réseau ; Lot 2 : datation réelle + décroissance + nouveau collecteur `legitimite.py` ; Lot 3 : surface d'export et cockpit). `agent-revue` vérifie avant tout commit. Aucun de ces lots n'existe dans le dépôt à ce jour. |
+| **Ce qui est proposé (design révisé)** | Pas un second score. `Diagnostic` gagne un seul champ, `evenements_intention: list[EvenementIntention]` — une **liste de faits datés et périssables** (ex. une offre d'emploi marketing détectée), chacun portant sa propre date d'observation et sa propre date de péremption calculée une fois. Le score de **besoin** reste un **état** permanent, inchangé, sans date. `scores_intention: dict[str, float]` — la version du premier jet — est **explicitement retiré** du design : « un score n'a pas de date, or la date EST l'information » (note de cadrage retenue dans l'ADR). |
+| **Pourquoi séparer les deux axes, et pourquoi pas même un second score** | Trois raisons, vérifiées dans le code, pas une préférence de style (ADR 0004, §D1) : (1) le besoin est déjà l'inverse d'une note de satisfaction (`rubric_persona1.yaml` : « un score BAS = un prospect CHAUD ») — un événement d'intention, positif par nature, fusionné au même total ferait dépendre le sens du nombre final du hasard de la combinaison ; (2) **même classe de défaut que P4** — fusionner « pas de besoin pressant » et « pas d'événement détecté » dans un seul nombre, ou même les stocker comme deux scores comparables, reproduit la perte d'information déjà corrigée pour `inconnu`/`echec` ; (3) une date n'est pas une magnitude — un score /100 n'a pas de champ pour « ceci expire le [date] », et pré-décroître la valeur avant un test numérique **cacherait** l'information la plus importante (la date elle-même) dans un flottant. |
+| **La table de correspondance, pas le calcul (D5)** | Besoin et intention se combinent en un **quadrant informationnel** (Q1 Fenêtre / Q2 Concurrence / Q3 Réservoir / Q4) par une **table de correspondance déterministe** sur deux libellés discrets (`fort`/`faible` de chaque côté) — jamais un produit, jamais une somme pondérée. Le quadrant (`FicheProspect.quadrant`, Lot 3, non implémenté) reste strictement informationnel : jamais utilisé pour trier ou disqualifier automatiquement. |
+| **Ce que ça capitalise sur P4** | `scoring.py` reste inchangé — preuve attendue : `git diff diagnostic/scoring.py` vide après implémentation. Mais la réutilisation n'est **plus** celle envisagée au premier jet : seules les deux primitives pures `_resolve`/`_check_passes` sont réutilisées, jamais l'agrégation de `ScoringEngine.score()` — l'agrégation renormalise et fait la moyenne, deux opérations qui n'ont pas de sens pour une liste d'événements datés. |
+| **Ce que la conception interdit explicitement (ADR 0004 §D13)** | Score composite besoin × intention ou tri de priorité automatique. Modifier `scoring.py`. Introduire un classificateur d'intention par LLM, à quelque stade que ce soit. Construire un modèle appris (machine learning) — la littérature citée (réserve `[NON LU]` ci-dessous) va dans le sens inverse à ce volume de données. Ressusciter les collecteurs déjà écartés par l'étude préalable (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via API externe). Exploiter le quadrant en conditions réelles (export livré, run priorisé) avant que `motif_rejet` et les états post-`contacte` n'existent pour mesurer si Q1/Q2 convertissent mieux que Q3/Q4 — **gate à deux vitesses** : le squelette peut se construire, son exploitation réelle attend la mesure. |
+| ⚠️ **Réserve de méthode, à ne jamais taire** | L'ADR révisée intègre une note de recherche documentaire qui porte, noir sur blanc, exactement la réserve attendue : **« aucune source ne franchit le dernier pas entre signal ouvert observé et cette PME va acheter du conseil en branding. Cette hypothèse appartient à la consultante, pas à la recherche. »** Chaque référence citée (Dawes 1979, D'Haen et al. 2016, Gutierrez et al. 2020, entre autres) est marquée **`[NON LU]`** : identifiée avec précision (titre, auteurs, revue, année, DOI si disponible) mais vérifiée au seul niveau du résumé — `WebFetch` a reçu un HTTP 403 systématique dans cette session, **aucun texte intégral n'a été lu**. Cette limite s'applique par extension à toute affirmation de ce document qui s'appuie sur cette ADR ou sur l'étude OSINT qui la précède. |
+| **Prochaine étape si implémenté** | Lotissement révisé : Lot 0 (prérequis de mesure — `motif_rejet`, états `rdv`/`client` — recommandé avant l'**exploitation réelle**, pas avant la construction) ; Lot 0bis (calibration de `entretien.fraicheur_mois`, change un score déjà en production, exige un test de non-régression explicite sur `signal_chaud`) ; Lot 1 (squelette de l'axe intention, zéro réseau supplémentaire) ; Lot 2 ; Lot 3. `agent-dev-python` implémente, `agent-revue` vérifie avant tout commit. Aucun de ces lots n'existe dans le dépôt à ce jour. |
 | **Vérification (ce qui est vérifiable aujourd'hui)** :
 ```bash
-git show --stat f36c276          # une seule ADR ajoutée, aucun fichier de code
-grep -rn "score_intention\|SignalIntention\|diagnostic/intent.py" diagnostic/ 2>/dev/null   # rien
+git show --stat f36c276 6ba11e2      # deux commits, une seule ADR touchée, aucun fichier de code
+grep -rn "evenements_intention\|EvenementIntention\|scores_intention\|diagnostic/intent.py" diagnostic/ 2>/dev/null   # rien
 ```
 |
 
@@ -225,7 +236,7 @@ python -m pytest tests/test_scoring.py tests/test_collectors_phase_d.py -q
 python -m pytest tests/test_doc_coherence.py -q
 
 # Ce qui n'existe pas encore (P6) — doit renvoyer une liste vide
-grep -rn "score_intention\|SignalIntention" diagnostic/ 2>/dev/null
+grep -rn "evenements_intention\|EvenementIntention" diagnostic/ 2>/dev/null
 
 # Le préflight — pourquoi les vérités inconfortables restent vraies
 python run_preflight.py; echo "code de sortie : $?"

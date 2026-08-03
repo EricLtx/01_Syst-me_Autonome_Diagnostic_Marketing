@@ -12,6 +12,146 @@ de l'indicatif. Chaque entrée cite son commit ou son fichier.
 
 ---
 
+## [Itération 3] — 2026-08-02/03 — garde-fou documentaire, trois états, multi-industrie, ADR intention
+
+Quatre chantiers, chacun recalé au moins une fois par la revue avant
+acceptation — voir `docs/architecture/PARADIGMES.md` pour le raisonnement
+complet de chaque bascule.
+
+**Comptes vérifiés par exécution** (le 2026-08-03, commit de tête `30cb6cf`) :
+`tests/` **575** (dont **19** scoring, **15** multi-industrie, **38** collecteurs,
+**9** doc-coherence) · backend **49** · frontend **34** · 10 routes `/api` ·
+6 écrans · 22 invariants · 9 contrôles préflight · 7 agents `.claude/agents/`.
+
+**Commits de l'itération :** `671ebeb` (garde-fou documentaire) · `7e41cb4`
+(durcissement du garde-fou) · `9aedce2` (étude stratégique OSINT, propriété du
+chef de projet) · `f77b4a6` (scoring trois états) · `4827474` (collecteurs
+Places, un échec technique n'est pas une observation) · `675e85d` (ADR 0003) ·
+`356c361` (multi-industrie, Lot 1) · `db0af6e` (correctif cockpit `persona:
+null`) · `f36c276` (ADR 0004, premier jet) · `3051f4f` (`PARADIGMES.md`,
+synthèse des sept bascules) · `6ba11e2` (ADR 0004 **révisée** avant toute
+implémentation) · `30cb6cf` (propagation dans `CLAUDE.md`/README/invariants).
+
+### Ajouté
+
+- **Garde-fou exécutable de cohérence documentaire** (`671ebeb`, durci par
+  `7e41cb4`) — `tests/test_doc_coherence.py` : **9 tests** (6 à la création,
+  +3 après durcissement). Compare ce que le Markdown du dépôt affirme (comptes
+  de tests, routes, écrans, invariants, agents, modules sous garde-fou AST,
+  contrôles préflight) à ce que `pytest --collect-only` et l'analyse statique
+  du code produisent réellement. Seuil « auto-calibrant » (F1) : toute ligne
+  qui se présente comme une ligne de tableau doit être exploitable — une
+  approximation (`~20`) devient un échec, pas une tolérance. Né d'une relance
+  de la revue à **92,3 %** sur le chantier DOCUMENTATION (chiffres périmés
+  dans `webapp/README.md` et `CLAUDE.md`, alors même que le commit qui
+  instituait la « Règle n° 0 — re-vérifie tes chiffres » les contenait déjà) ;
+  la première version du garde-fou a elle-même été recalée à **90 %** (un seuil
+  chiffré à 15 lignes laissait une marge de 6 — exactement le nombre
+  d'approximations réintroductibles sans échec).
+  Le garde-fou a trouvé, par exécution, des écarts qu'aucune des passes de
+  revue précédentes n'avait vus : `agent-architecte.md` annonçait 10
+  invariants (réel 21), `agent-documentation.md` 5 écrans (réel 6) puis 8
+  routes (réel 10), et six lignes du tableau de tests portaient des
+  approximations dont certaines franchement fausses (`~30` pour 36 réels,
+  `~20` pour 16 réels).
+- **Moteur de scoring à trois états** (`f77b4a6`) — `diagnostic/scoring.py` :
+  un check vaut `ok` / `echec` / **`inconnu`**, jamais deux états seulement.
+  `_check_passes` retourne `None` dès qu'un signal n'a pas été observé ; un
+  `inconnu` ne produit ni point, ni dénominateur, ni faille. Le score global
+  est renormalisé sur les seules dimensions observées ; `scores["_couverture"]`
+  publie la part réellement évaluée. Corrige un défaut mesuré sur le système
+  réel : sans clé Google Places, les dimensions `presence_locale` et `avis`
+  valaient 0/100 pour **tous** les prospects (45 % de la pondération fabriquée
+  à zéro), et trois entreprises radicalement différentes recevaient la même
+  accroche. `tests/test_scoring.py` : **19 tests**.
+- **Correction du même défaut dans les collecteurs de production** (`4827474`)
+  — traite le backlog d'une re-revue qui a recalé le chantier scoring à
+  **78,6 %** en démontrant que la correction précédente n'était prouvée que sur
+  le moteur, pas sur le chemin réel : `run_diagnostic._build_pipeline()`
+  injectait toujours un `api_io`, et Google Places répondait HTTP 200
+  `{"status":"REQUEST_DENIED","results":[]}`, lu comme « aucune fiche trouvée »
+  plutôt que « je n'ai pas pu vérifier ». `diagnostic/collectors/_places.py`
+  (nouveau) : seuls `OK`/`ZERO_RESULTS` sont des observations. `social.py`
+  distingue site consulté sans lien social ([]) de site jamais consulté
+  (`None`). `tests/test_collectors_phase_d.py` : **38 tests**.
+- **Multi-industrie — `icp_id`/`secteur_id` comme clé de configuration**
+  (`675e85d` pour l'ADR, `356c361` pour le Lot 1, `db0af6e` pour le correctif
+  cockpit) — décision : `docs/adr/0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md`.
+  `secteur_id` remplace `persona` comme clé de sélection de rubrique et de
+  vocabulaire ; `FicheProspect.persona` passe à `int | None`, `marche` à un
+  `str` validé par motif de slug (rétro-compatibilité totale : `persona1-quebec`
+  se résout à l'identique). `run_vault_mode` construit désormais **un pipeline
+  par secteur rencontré dans le lot**, corrigeant le défaut le plus grave (un
+  seul pipeline appliqué à toutes les fiches, quel que soit leur persona).
+  `WebsiteCollector.vocabulaire_offre` injecté par le pipeline — vocabulaire
+  absent → `mentions_offre = None`, jamais `False`. Correctif de suivi
+  (`db0af6e`) : le cockpit renvoyait une 500 sur toute fiche `persona: null`,
+  reproduit par la revue sur un vrai vault (chantier recalé à **92,3 %**).
+  `tests/test_multi_industrie.py` : **15 tests**.
+- **ADR 0004 — axe `intention` (événement daté et périssable)** (`f36c276`
+  premier jet, **révisée par `6ba11e2` le jour même, avant toute
+  implémentation**) — **`[PROPOSÉ — AUCUNE LIGNE DE CODE LIVRÉE]`**. Le premier
+  jet proposait un second score `score_intention: dict[str, float]` ; la
+  révision le retire explicitement : `Diagnostic` gagnerait un seul champ,
+  `evenements_intention: list[EvenementIntention]` — une liste de faits datés
+  et périssables, pas un chiffre. Mise en relation besoin/intention par une
+  **table de correspondance déterministe** (quadrant Q1-Q4, informationnel),
+  jamais par un calcul. Refuse explicitement tout score composite et tout tri
+  de priorité automatique. `scoring.py` resterait inchangé (preuve attendue :
+  `git diff` vide), mais seules ses deux primitives pures seraient réutilisées,
+  jamais l'agrégation de `ScoringEngine.score()`. La révision elle-même
+  corrige un écart entre message de commit et contenu du fichier détecté sur
+  `f36c276` — traité comme une instance du même motif d'hallucination que ce
+  projet traque par ailleurs (P7). Voir `docs/architecture/PARADIGMES.md` §P6
+  pour la réserve de méthode : l'ADR cite elle-même une note de recherche qui
+  pose noir sur blanc qu'aucune source ne relie un signal ouvert à un achat de
+  conseil en branding — c'est l'hypothèse de la consultante, pas un fait établi.
+- **`docs/architecture/PARADIGMES.md`** (`3051f4f`, complétée dans cette passe)
+  — synthèse des sept bascules de paradigme du projet : Avant → Après,
+  pourquoi, impact concret, ce que chacune interdit désormais, statut et
+  commit. Section « Ce que ces bascules ont en commun » et « Ce qui n'a pas
+  changé et ne doit pas changer ».
+
+### Modifié
+
+- `CLAUDE.md`, `docs/architecture/README.md`, `docs/architecture/invariants.md`,
+  `docs/adr/README.md` (`30cb6cf` et cette passe) — multi-industrie, trois
+  états du moteur, ADR 0003/0004, comptes de tests re-vérifiés, ADR 0004 §P6
+  réconciliée avec sa révision `6ba11e2` (le design a changé pendant
+  l'itération — voir « Corrigé » ci-dessous).
+
+### Corrigé
+
+- **`docs/architecture/PARADIGMES.md` §P6 et `CLAUDE.md` (section ADR 0004)**
+  décrivaient encore le premier jet de l'ADR 0004 (`score_intention: dict`)
+  alors que la révision `6ba11e2` — atterrie pendant cette même passe
+  documentaire, chantier voisin en parallèle — avait déjà remplacé ce design
+  par `evenements_intention: list[EvenementIntention]`. Corrigé dans cette
+  passe : exemple direct de la Règle n° 0 (« re-vérifie chaque chiffre — et,
+  ici, chaque affirmation de design — juste avant de rendre ») appliquée à un
+  état de conception plutôt qu'à un chiffre.
+
+### Sécurité / fiabilité
+
+- Le garde-fou documentaire (`test_doc_coherence.py`) et l'anti-fuite de
+  vocabulaire (ADR 0003) sont tous deux des instances du même principe : ne
+  jamais fabriquer un fait (un chiffre, une faille) à partir d'une absence
+  d'observation.
+
+### Ce qui reste NON mesurable / NON implémenté
+
+- Aucune économie GreenIT chiffrable (inchangé depuis l'itération 2).
+- **Aucune rubrique non-HVAC n'existe encore** : le mécanisme multi-industrie
+  est livré, le contenu métier d'un second secteur reste à écrire.
+- **ADR 0004 est une conception, pas du code** : aucun champ
+  `evenements_intention`, aucun module `diagnostic/intent.py` dans le dépôt à
+  ce jour — vérifié après la révision `6ba11e2` comme avant elle.
+- **Dette non traitée** : `diagnostic/greenit.py` toujours absent de la liste
+  `_check_garde_fous_bus` (invariant tenu par le filet générique en `rglob`,
+  pas par le mécanisme annoncé — inchangé depuis l'itération 2).
+
+---
+
 ## [Itération 2] — 2026-08-01 — GreenIT, intégration e2e, cockpit connecté
 
 Quatre chantiers menés en parallèle, tous commités et audités.
@@ -72,7 +212,7 @@ frontend **34**.
   l'autre, chacun portant les invariants d'architecture dans son prompt système
   (`agent-documentation`, `agent-revue`, `agent-architecte`, `agent-dev-python`,
   `agent-frontend`, `agent-greenit`, `agent-produit`).
-  `docs/architecture/` (vue d'ensemble + Mermaid, **21 invariants** avec leur
+  `docs/architecture/` (vue d'ensemble + Mermaid, **22 invariants** avec leur
   preuve exécutable, flux de bout en bout), `docs/adr/` (ADR 0001 et 0002),
   `docs/agents/ECOSYSTEME.md`, `docs/CHANGELOG.md`.
 

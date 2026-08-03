@@ -590,25 +590,35 @@ l'avance**, pas à une intuition. Le vault reste la source de vérité : il n'es
 
 ### ADR 0004 — Axe `intention` : `[PROPOSÉ — AUCUNE LIGNE DE CODE LIVRÉE]`
 Décision : `docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`
-(commit `f36c276`, conception uniquement — vérifié : `git show --stat f36c276`
-ne touche que le fichier ADR).
-- Second axe `score_intention` : un **événement daté** (ex. recrutement
-  marketing) dont la valeur décroît avec le temps, à côté du score de
-  **besoin** (un état, sans date). Les deux ne doivent **jamais** se fondre
-  dans un score composite ni produire un tri de priorité automatique.
-- Réutilise `ScoringEngine` sans le modifier (`diagnostic/intent.py`, non
-  écrit). Preuve d'acceptation prévue : `git diff diagnostic/scoring.py` vide
-  après implémentation.
+(commit `f36c276`, premier jet ; **révisée le même jour par `6ba11e2`**, avant
+toute implémentation — vérifié : `git show --stat f36c276 6ba11e2` ne touche
+que le fichier ADR, toujours zéro ligne de code).
+- **Pas un second score.** `Diagnostic` gagnerait un seul champ,
+  `evenements_intention: list[EvenementIntention]` — une liste de faits datés
+  et périssables (ex. une offre de recrutement marketing), chacun avec sa
+  propre date de péremption calculée une fois. Le design du premier jet
+  (`scores_intention: dict[str, float]`) est **explicitement retiré** :
+  « un score n'a pas de date, or la date EST l'information ». Les deux axes
+  ne doivent **jamais** se fondre dans un score composite ni produire un tri
+  de priorité automatique — la mise en relation besoin/intention passerait
+  par une **table de correspondance déterministe** (quadrant Q1-Q4, purement
+  informationnel), jamais par un calcul.
+- Réutiliserait seulement les primitives pures `_resolve`/`_check_passes` de
+  `scoring.py`, **jamais** l'agrégation de `ScoringEngine.score()` (renormaliser
+  et moyenner n'a pas de sens pour une liste d'événements). Preuve d'acceptation
+  prévue : `git diff diagnostic/scoring.py` vide après implémentation.
 - Deux collecteurs retenus si implémenté : extension de `website.py` (signal
-  de recrutement marketing, zéro nouveau réseau en Lot 1) et `legitimite.py`
-  (nouveau, palier 0, licences/certifications). Cinq autres candidats déjà
-  écartés par l'étude préalable restent écartés (registre légal, WHOIS/RDAP,
-  Wayback, PageSpeed, offres d'emploi via API externe).
-- ⚠️ **Réserve de méthode** : l'hypothèse qu'un signal d'intention ouvert
-  améliore la qualification d'un achat de conseil en branding est celle de la
-  commanditaire — aucune source académique ne l'établit dans les documents du
-  projet. L'étude préalable documente elle-même que `WebFetch`/`curl` ont reçu
-  un HTTP 403 sur toutes les pages tarifaires consultées : aucune référence
-  externe de ce dossier n'a été lue en texte intégral, seulement au niveau du
-  résumé de recherche.
+  de recrutement marketing, entièrement `citable`, zéro nouveau réseau en
+  Lot 1) et `legitimite.py` (nouveau, palier 0, licences/certifications — côté
+  **besoin**, pas intention : une certification affichée est un état, pas un
+  événement). Cinq autres candidats déjà écartés par l'étude préalable restent
+  écartés (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via
+  API externe).
+- ⚠️ **Réserve de méthode** : l'ADR révisée cite une note de recherche
+  documentaire qui pose elle-même la limite — « aucune source ne franchit le
+  dernier pas entre signal ouvert observé et cette PME va acheter du conseil
+  en branding ; cette hypothèse appartient à la consultante, pas à la
+  recherche ». Chaque référence citée est marquée `[NON LU]` : `WebFetch` a
+  reçu un HTTP 403 systématique dans cette session, aucun texte intégral n'a
+  été lu, seulement des résumés de recherche.
 - Détail complet : `docs/architecture/PARADIGMES.md` §P6.
