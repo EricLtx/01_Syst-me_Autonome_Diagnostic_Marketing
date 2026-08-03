@@ -6,11 +6,13 @@
 > d'une seconde passe documentaire.
 >
 > Dernière vérification : **2026-08-03**, branche
-> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `f36c276`
-> (itération 3 : garde-fou documentaire `671ebeb`/`7e41cb4`, moteur de scoring à
-> trois états `f77b4a6`/`4827474`, multi-industrie ADR 0003 `356c361`/`db0af6e`,
-> ADR 0004 « intention » proposée `f36c276`).
-> Comptes vérifiés par exécution : `tests/` **575** · backend **49** · front **34**.
+> `claude/diagnostic-as-is-fonctionnalites-7kzdj4`, commit de tête `cc99302`
+> (itération 4 : axe `intention`, ADR 0004, Lots 1-2 + volet export du Lot 3
+> implémentés — après l'itération 3 : garde-fou documentaire `671ebeb`/`7e41cb4`,
+> moteur de scoring à trois états `f77b4a6`/`4827474`, multi-industrie ADR 0003
+> `356c361`/`db0af6e`).
+> Comptes vérifiés par exécution : `tests/` **650** · `tests/integration` **56** ·
+> backend **49** · front **34** · **24** invariants.
 >
 > Voir aussi `docs/architecture/PARADIGMES.md` : **pourquoi** chacune de ces
 > bascules a été décidée et ce qu'elle interdit désormais — ce document-ci
@@ -292,6 +294,9 @@ les garde-fous qui fonctionnent, pas des défauts à contourner.
 | **Vault non initialisé** | `vault/` est vide — `init_vault.py` n'a pas été exécuté | contrôle `vault_initialise` du préflight en échec |
 | **J6 outreach non activable** | `dag_pipeline.yaml` : `outreach.enabled: false` ; `Orchestrateur._run_outreach()` renvoie systématiquement `bloque` | aucun email ne peut partir. Levée conditionnée à une **validation juridique** : CASL (QC), nLPD + art. 3 LCD (CH), RGPD (FR), transparence AI Act |
 | **Chiffres d'empreinte = estimations** | facteurs paramétrables en YAML, aucune mesure certifiée n'existe chez les fournisseurs | toute valeur énergie/CO₂e doit être étiquetée « estimation » |
+| **YAML d'axe intention non calibrés** | `knowledge/intent_persona1.yaml`, `knowledge/vocabulaire_intention_persona1.yaml`, `knowledge/certifications_quebec.yaml` marqués `[À CALIBRER]` | aucun seuil (demi-vie, fenêtre de péremption, seuil de quadrant) n'a été validé par la consultante |
+| **`legitimite.py` résout le marché en dur** | `MARCHE_CERTIFICATIONS_PAR_DEFAUT = "quebec"` dans `vault_runner.py`/`run_diagnostic.py`, pas par fiche | limite symétrique de celle déjà acceptée pour `vocabulaire_offre` (ADR 0003) |
+| **`VaultIO.append_historique()` posée, non exploitée** | `vault/40-Historique/` existe comme mécanisme, aucun collecteur n'écrit dedans | infrastructure anticipée (ADR 0004 §D3), pas encore utile |
 
 Lever les trois premières limites relève de la **Phase D** (paramétrage par
 l'opératrice : variables d'environnement + YAML), pas du développement.
@@ -341,16 +346,18 @@ corrompue lue à chaud. **Lecture seule stricte préservée** (invariant I14).
 
 ## 8. Tests d'intégration end-to-end (itération 2, livré)
 
-`tests/integration/` — **46 tests** exécutés contre un **faux serveur HTTP
-local** (`faux_api.py`), **sans aucune clé API** (commit `0234af3`).
+`tests/integration/` — **56 tests** exécutés contre un **faux serveur HTTP
+local** (`faux_api.py`), **sans aucune clé API** (commit `0234af3`, étendu à
+l'itération 4 par `cc99302`).
 
 | Fichier | Ce qu'il prouve |
 |---|---|
 | `test_e2e_bus.py` | cache (deux appels identiques → **une seule** requête réseau), budget interrompu **avant** l'appel, cache refusé dans le vault, machine à états inviolable, journaux append-only |
 | `test_e2e_decouverte.py` | SERP → fiches `decouvert`, filtres ICP, dédup, enrichissement Apollo, minimisation RGPD, dry-run |
 | `test_e2e_diagnostic.py` | collecte réelle, partage de cache Places, transition `decouvert → diagnostique`, repli déterministe **sans appel** quand la clé manque, idempotence |
-| `test_e2e_export.py` | opt-out absolu, lecture seule, refus d'écrire dans le vault, colonnes Kemana, anomalies |
+| `test_e2e_export.py` | opt-out absolu, lecture seule, refus d'écrire dans le vault, colonnes Kemana (13, dont 3 intention), anomalies |
 | `test_e2e_orchestrateur.py` | GO/NO-GO, chaîne cohérente, idempotence, dry-run, verrou anti-concurrence |
+| `test_e2e_intention.py` (itération 4) | discrimination à besoin égal, escalade page carrières via le bus réseau, `citable=True` obligatoire, trois états préservés |
 
 **L'apport décisif** : les invariants ne sont plus seulement prouvés par mock
 mais **par le réseau**. Voir les colonnes « Comment c'est testé » de
@@ -416,7 +423,62 @@ Vérification : `python -m pytest tests/test_scoring.py tests/test_collectors_ph
 
 ---
 
-## 11. Trajectoire
+## 11. Axe intention — ADR 0004 (itération 4, Lots 1-2 + volet export du Lot 3 livrés)
+
+Décision : `docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`
+(révisée `6ba11e2` avant toute implémentation). Implémentation : `cc99302`.
+Second axe, **orthogonal** au besoin — voir `docs/architecture/PARADIGMES.md`
+§P6 pour le raisonnement complet.
+
+`diagnostic/intent.py::evaluer_intention()` rejoue les checks d'une rubrique
+d'intention un par un, en réutilisant **uniquement** les primitives pures
+`_resolve`/`_check_passes` de `scoring.py` — jamais `ScoringEngine.score()`.
+Il produit une **liste** d'`EvenementIntention` (dimension, preuve, date,
+péremption, intensité, citabilité, fiabilité de source), jamais un score.
+`git diff diagnostic/scoring.py` reste **vide** (invariant I23).
+
+| Composant | Rôle |
+|---|---|
+| `diagnostic/models.py::EvenementIntention` | dataclass — événement daté, jamais un score |
+| `diagnostic/intent.py` | rejoue les checks `nature: evenement`, écarte les checks non datés |
+| `diagnostic/collectors/_decay.py::decroissance()` | fonction pure, **strictement informationnelle**, jamais câblée dans le scoring |
+| `diagnostic/collectors/legitimite.py` | nouveau collecteur, palier 0 — alimente le **besoin** (dimension `legitimite_conformite`), pas l'intention |
+| `diagnostic/collectors/website.py` | `vocabulaire_intention`, `offre_detectee`/`offre_detectee_date`, escalade page carrières (1 appel de plus) |
+| `diagnostic/vault_schema.py` | 3 champs optionnels : `signal_intention`, `date_intention`, `intention_expire_le` |
+| `diagnostic/serializers.py` | dérivation sous contrainte dure `citable=True` (invariant I24) |
+| `diagnostic/vault_io.py::append_historique()` | `vault/40-Historique/<slug>.jsonl` — **posé, non exploité** |
+| `knowledge/export_kemana.yaml` | 10 → 13 colonnes (3 colonnes intention, additives) |
+
+**Banc d'essai reproductible** (`scripts/benchmark_intention.py`, mesuré le
+2026-08-03, faux serveur, 9 entreprises HVAC fictives, sans clé API) :
+score_global min 36,9 / max 81,5 / moyenne 46,8 ; `signal_chaud` 2 distincts
+sur 9 ; `signal_intention` 1 sur 9 (« Thermo Marchand ») ; quadrant Q1=1,
+Q2=0, Q3=6, Q4=2 ; couverture moyenne 0,65. **Le 2/9 est un plafond de
+fixture** (le faux serveur ne modélise que 2 profils de site distincts), pas
+une mesure de performance commerciale : n=1 sur l'axe intention, seuil de
+quadrant `[À CALIBRER]`, aucun dénominateur commercial (`motif_rejet`
+n'existe pas).
+
+**Non fait** : Lot 0 (`motif_rejet`, états `rdv`/`client` — prérequis de
+mesure avant toute **exploitation réelle** du quadrant) · Lot 0bis
+(calibration graduée de `entretien.fraicheur_mois`) · reste du Lot 3 (cockpit,
+4ᵉ requête Dataview, `FicheProspect.quadrant` persistant). Limite connue :
+`legitimite.py` résout le marché en dur sur `"quebec"`, pas par fiche. Les
+trois YAML d'intention sont des brouillons `[À CALIBRER]`, aucun seuil validé
+par la consultante.
+
+Vérification :
+```bash
+python -m pytest tests/test_intent.py tests/test_decay.py tests/test_legitimite.py \
+  tests/test_website_intention.py tests/test_config_intent.py \
+  tests/test_serializers_intention.py tests/test_vault_io_historique.py -q   # 65 tests
+python -m pytest tests/integration/test_e2e_intention.py -q                 # 10 tests
+git diff diagnostic/scoring.py                                             # vide
+```
+
+---
+
+## 12. Trajectoire
 
 | Palier | Contenu | Statut |
 |---|---|---|
@@ -424,7 +486,7 @@ Vérification : `python -m pytest tests/test_scoring.py tests/test_collectors_ph
 | **2** | Critique de grounding déterministe · conformité-par-donnée (`compliance/*.yaml` par marché) · routage de modèle piloté par YAML | **partiellement livré** — le routage de modèle YAML est fait (ADR 0002, itération 2). Restent la critique de grounding et la conformité-par-donnée |
 | **3** | Fragments multi-tenant (gateway métrée par tenant, isolation, coût par tenant) | **gelé** jusqu'à un seuil de tenants payants défini à l'avance |
 | — | Multi-industrie (`secteur_id`, ADR 0003) | **livré** (itération 3) — indépendant des paliers de l'ADR 0001 |
-| — | Axe `intention` daté et décroissant (ADR 0004) | **`[PROPOSÉ — NON IMPLÉMENTÉ]`** (itération 3) — conception actée, aucune ligne de code |
+| — | Axe `intention` daté et décroissant (ADR 0004) | **Lots 1-2 + volet export du Lot 3 livrés** (itération 4) — Lot 0, Lot 0bis et reste du Lot 3 **non faits** |
 
 Refus explicites et durables : le **superviseur-planificateur LLM** (coût,
 non-déterminisme, charge cognitive) et l'inversion de l'invariant du vault

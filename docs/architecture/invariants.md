@@ -6,6 +6,8 @@
 > `2ed8d93`) ; ils peuvent bouger, la commande de contrôle reste valable.
 > Section I17 complétée le **2026-08-03** (trois états ok/échec/inconnu,
 > commits `f77b4a6`/`4827474`) — comptes de tests re-vérifiés à cette date.
+> I23/I24 ajoutées le **2026-08-03** (axe intention, ADR 0004, commit
+> `cc99302`) — comptes de tests re-vérifiés à cette date (650 dans `tests/`).
 >
 > Cadre général : `docs/architecture/README.md`.
 > **Pourquoi** ces règles ont pris la forme qu'elles ont, et ce qu'elles
@@ -701,6 +703,87 @@ python run_diagnostic.py --nom X --url https://exemple.test --json | \
 > partaient en réseau pour recevoir un refus qu'ils interprétaient comme une
 > observation. Un invariant de ce type se vérifie **sur le chemin de
 > production**, pas seulement en unitaire.
+
+---
+
+## I23 — L'axe intention n'est jamais un score, et ne touche jamais `scoring.py`
+
+**Invariant.** `diagnostic/intent.py::evaluer_intention()` réutilise
+**uniquement** les deux primitives pures de `scoring.py` (`_resolve`,
+`_check_passes`) et produit une **liste** d'`EvenementIntention`, jamais un
+score ni un dict de scores. `ScoringEngine.score()` (agrégation,
+renormalisation, `_couverture`) n'est **jamais** appelé sur cet axe.
+`diagnostic/scoring.py` n'est **pas modifié** par l'ADR 0004.
+
+**Pourquoi.** Une date n'est pas une magnitude : renormaliser et faire la
+moyenne d'une liste d'événements datés et périssables n'a pas de sens — c'est
+exactement l'erreur que la note de cadrage CMO a fait corriger avant toute
+implémentation (« un score n'a pas de date, or la date EST l'information »,
+`docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`). Fusionner
+besoin et intention dans un score composite écraserait deux histoires
+commerciales opposées (besoin haut + recrutement ≠ besoin bas + recrutement).
+Un événement `EvenementIntention` reste distinct d'un `Gap` de polarité
+inversée : il porte une date et une échéance, deux informations qu'aucun
+score /100 ne peut représenter sans les perdre.
+
+**Comment c'est tenu.**
+- `diagnostic/intent.py` importe `_resolve`/`_check_passes` depuis
+  `scoring.py`, jamais `ScoringEngine`.
+- `diagnostic/pipeline.py::DiagnosticPipeline.run()` appelle
+  `evaluer_intention()` **après** `self.engine.score(signaux)`, dans une étape
+  séparée (« 2bis »), sans passer par le moteur.
+- Un check `nature: etat` (ou sans `nature` déclarée — défaut `etat`) dans une
+  rubrique d'intention est **ignoré** par `evaluer_intention()` : seuls les
+  checks `nature: evenement` produisent un `EvenementIntention`.
+- Un événement dont la date ne résout à rien (`date_signal` introuvable) est
+  **écarté**, jamais dégradé en état permanent.
+
+**Comment c'est testé.**
+```bash
+git diff diagnostic/scoring.py                       # doit rester vide
+python -m pytest tests/test_intent.py -q              # 14 tests
+python -m pytest tests/integration/test_e2e_intention.py -q   # 10 tests, faux serveur
+```
+`git diff diagnostic/scoring.py` a été re-vérifié **vide** au moment de la
+rédaction de cette section (commit de tête `cc99302`).
+
+---
+
+## I24 — `citable=True` est obligatoire pour dériver `signal_intention`
+
+**Invariant.** `FicheProspect.signal_intention` (et les deux champs qui
+l'accompagnent, `date_intention`/`intention_expire_le`) ne peuvent être
+dérivés que d'un `EvenementIntention` dont `citable` vaut **`True`**. Un
+événement non citable peut apparaître dans le rapport Markdown interne
+(section « Signaux d'intention », pilotage opérateur) mais jamais dans le
+champ envoyé côté prospect.
+
+**Pourquoi.** Certains signaux sont excellents pour prioriser en interne et
+désastreux à prononcer devant le prospect (un signal dérivé se lit comme de
+la surveillance, pas comme de l'observation publique). Règle du projet : on
+ne cite que ce que le prospect a **publié délibérément pour être vu**. Même
+patron que la règle déjà en vigueur pour `signal_chaud` (jamais dérivé d'un
+signal `inconnu`, I22) — ici appliquée à la citabilité plutôt qu'à
+l'observabilité.
+
+**Comment c'est tenu.**
+- `EvenementIntention.citable` défaut à `False` dans
+  `diagnostic/intent.py::evaluer_intention()` (`c.get("citable", False)`) —
+  sécurité par défaut, jamais citable sans déclaration explicite en YAML.
+- `diagnostic/serializers.py::diagnostic_to_fiche()` filtre
+  `diag.evenements_intention` sur `e.citable` avant de choisir l'événement
+  principal ; les événements non citables restent invisibles à ce filtre.
+- Les deux collecteurs livrés (`website.py::offre_detectee`,
+  `legitimite.py`) déclarent leurs checks `citable: true` dans les YAML
+  (`knowledge/intent_persona1.yaml`), parce qu'une offre d'emploi publiée ou
+  une certification affichée sont déjà rendues publiques par le prospect
+  lui-même.
+
+**Comment c'est testé.**
+```bash
+python -m pytest tests/test_serializers_intention.py -q   # 10 tests
+python -m pytest tests/test_intent.py -q -k "citable"
+```
 
 ---
 

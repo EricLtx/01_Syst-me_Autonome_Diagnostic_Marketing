@@ -11,7 +11,7 @@ Messages d'Anthropic et les sites web des prospects. Les variables
 `*_BASE_URL` pointent dessus. Tout le reste du code s'exécute tel quel.
 
 ```bash
-python -m pytest tests/integration -q        # 46 tests, ~10 s, zéro réseau externe
+python -m pytest tests/integration -q        # 56 tests, ~13 s, zéro réseau externe
 ```
 
 Dépendance optionnelle : le SDK `anthropic` (`pip install anthropic`). Sans

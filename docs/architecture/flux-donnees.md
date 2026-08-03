@@ -1,7 +1,9 @@
 # Flux de données — de l'ICP à la liste Kemana
 
 > Chaîne de bout en bout, telle qu'elle est réellement implémentée.
-> Vérifié le **2026-08-01**, commit de tête `4585a10` (itération 2).
+> Vérifié le **2026-08-03**, commit de tête `cc99302` (axe intention, ADR 0004,
+> Lots 1-2 + volet export du Lot 3). Base précédente : **2026-08-01**, commit
+> `4585a10` (itération 2).
 > Vue d'ensemble : `docs/architecture/README.md` · Règles :
 > `docs/architecture/invariants.md`.
 >
@@ -138,10 +140,27 @@ fiche decouvert
 | `social.py` | 0 | aucune — dérivé de `_website_signals.social_links` | `plateformes_mentionnees=[]` |
 | `gbp.py` | 1 | Google Places `text_search` via `api_io` | stub `verified=None` |
 | `reviews.py` | 1 | Google Places `text_search` + `place_details` via `api_io` | stub `count=None` |
+| `legitimite.py` | 0 | aucune — dérivé de `_website_signals` (ADR 0004) | `None` par catégorie si motifs non configurés ou site injoignable |
 
-Les collecteurs **dérivés** (`seo`, `social`) n'ont aucun accès réseau propre :
-après la collecte du site, le pipeline leur **injecte** `_website_signals`. Une
-seule requête par cible, conformément à la politique de scraping poli.
+Les collecteurs **dérivés** (`seo`, `social`, `legitimite`) n'ont aucun accès
+réseau propre : après la collecte du site, le pipeline leur **injecte**
+`_website_signals`. Une seule requête par cible, conformément à la politique de
+scraping poli — sauf `website.py`, qui effectue **un** appel supplémentaire
+optionnel (page carrières, ADR 0004 Lot 2) uniquement si un vocabulaire de
+recrutement est détecté ET qu'un lien carrières est repéré sur la page
+d'accueil.
+
+### Axe intention (ADR 0004, Lots 1-2 + volet export du Lot 3)
+
+`diagnostic/intent.py::evaluer_intention()` s'exécute **après** le scoring,
+dans une étape séparée du pipeline (`DiagnosticPipeline.run()`, étape « 2bis ») :
+il rejoue les checks d'une rubrique d'intention (`knowledge/intent_persona1.yaml`,
+brouillon `[À CALIBRER]`) un par un via les primitives `_resolve`/`_check_passes`
+de `scoring.py` — jamais `ScoringEngine.score()` — et produit une **liste**
+d'`EvenementIntention`, jamais un score. `serializers.py` ne dérive
+`signal_intention`/`date_intention`/`intention_expire_le` que du premier
+événement `citable=True` (invariant I24). Détail : `docs/architecture/invariants.md`
+I23/I24, `docs/architecture/PARADIGMES.md` §P6.
 
 ### Scoring
 
@@ -228,9 +247,11 @@ flowchart LR
 
 - **`opt_out: true` exclut une fiche sans exception** (RGPD / CASL / nLPD).
   Ce n'est pas un filtre par défaut : c'est une règle absolue.
-- **Les colonnes sont une donnée** : `knowledge/export_kemana.yaml` définit dix
-  colonnes (Nom, Titre, Boîte, ICP, Email, Source email, Site, Score, Signal
-  chaud, Statut). Ajouter ou réordonner = éditer le YAML.
+- **Les colonnes sont une donnée** : `knowledge/export_kemana.yaml` définit
+  treize colonnes (Nom, Titre, Boîte, ICP, Email, Source email, Site, Score,
+  Signal chaud, **Signal intention, Date intention, Intention expire** — ADR
+  0004, volet export du Lot 3, purement additives —, Statut). Ajouter ou
+  réordonner = éditer le YAML.
 - **Encodage `utf-8-sig`** (BOM) pour une ouverture directe dans Excel en
   configuration française.
 - **Refus d'écrire dans le vault** : `verifier_chemin_hors_vault()` lève une
@@ -302,6 +323,7 @@ de l'AI Act. Voir invariant I18.
 | Rapports de diagnostic | `vault/30-Diagnostics/*.md` | oui | `VaultIO.write_rapport` |
 | Copies de rubriques | `vault/20-Rubrics/` | oui | `init_vault.py` |
 | Notes système, snapshots d'usage | `vault/90-Systeme/` | oui | `VaultIO.write_system_note` |
+| Historique append-only par fiche (ADR 0004, **posé, non exploité**) | `vault/40-Historique/<slug>.jsonl` | oui | `VaultIO.append_historique` |
 | Journal des écritures vault | `runs.log` (racine) | **non** (gitignoré) | `VaultIO._journal` |
 | Grand livre des coûts | `api_usage.log` (racine) | **non** | `ApiIO._journaliser` |
 | Cache d'appels API | `.cache/api_io/` | **non** | `ApiIO._ecrire_cache` |
@@ -331,7 +353,8 @@ L'écriture du manifeste est **best-effort** : elle ne fait jamais échouer un r
 
 Depuis l'itération 2, chaque étape décrite ci-dessus est couverte par un test
 d'intégration **réel** — exécuté contre un faux serveur HTTP local
-(`tests/integration/faux_api.py`), **sans aucune clé API**. 46 tests au total.
+(`tests/integration/faux_api.py`), **sans aucune clé API**. 56 tests au total
+(46 + 10 pour l'axe intention, ADR 0004, `test_e2e_intention.py`).
 
 | Étape de ce document | Test qui la prouve |
 |---|---|
@@ -339,10 +362,11 @@ d'intégration **réel** — exécuté contre un faux serveur HTTP local
 | §3 découverte | `test_e2e_decouverte.py` — SERP → fiches, filtres ICP, dédup, Apollo, minimisation RGPD, dry-run sans écriture |
 | §4 diagnostic | `test_e2e_diagnostic.py` — collecte réelle, cache Places partagé entre `gbp` et `reviews`, transition `decouvert → diagnostique`, **repli déterministe sans appel** quand la clé manque |
 | §5 porte humaine | `test_e2e_bus.py::test_agent_ne_peut_pas_valider_une_fiche` et `test_transitions_illegales_refusees` |
-| §6 export | `test_e2e_export.py` — opt-out absolu, lecture seule, refus d'écrire dans le vault |
+| §6 export | `test_e2e_export.py` — opt-out absolu, lecture seule, refus d'écrire dans le vault, colonnes intention additives |
 | §7 usage | `test_e2e_bus.py::test_grand_livre_est_du_jsonl_append_only` |
 | Bus réseau (transverse) | `test_e2e_bus.py` — **deux appels identiques → une seule requête réseau** ; **budget interrompu AVANT l'appel** ; cache refusé dans le vault |
 | Chaîne complète | `test_e2e_orchestrateur.py::TestChaineComplete` — état cohérent, idempotence, dry-run, verrou anti-concurrence |
+| Axe intention (ADR 0004) | `test_e2e_intention.py` — discrimination à besoin égal (twin de contrôle « recruteuse »/« non recruteuse »), escalade page carrières via `api_io.call()`, `signal_intention` dérivé uniquement d'un événement `citable=True` |
 
 **Ce que ça change** : les invariants ne reposent plus sur des mocks qui
 pourraient mentir sur le comportement réseau réel. Le cache, les budgets et la
@@ -350,5 +374,5 @@ machine à états sont désormais vérifiés par observation du trafic effective
 reçu par le serveur.
 
 ```bash
-python -m pytest tests/integration -q          # 46 tests, aucune clé requise
+python -m pytest tests/integration -q          # 56 tests, aucune clé requise
 ```

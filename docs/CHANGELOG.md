@@ -12,6 +12,150 @@ de l'indicatif. Chaque entrée cite son commit ou son fichier.
 
 ---
 
+## [Itération 4] — 2026-08-03 — Axe intention (ADR 0004, Lots 1-2 + export du Lot 3)
+
+**Comptes vérifiés par exécution** (le 2026-08-03, commit de tête `cc99302`) :
+`tests/` **650** (dont **14** `test_intent.py`, **9** `test_decay.py`, **9**
+`test_legitimite.py`, **10** `test_website_intention.py`, **7**
+`test_config_intent.py`, **10** `test_serializers_intention.py`, **6**
+`test_vault_io_historique.py`) · `tests/integration` **56** (dont **10**
+`test_e2e_intention.py`) · backend **49** · front **34** · 24 invariants ·
+`git diff diagnostic/scoring.py` **vide** (invariant dur de l'ADR 0004,
+re-vérifié) · garde-fous bus AST **8/8**.
+
+**Commit de l'itération :** `cc99302` (implémentation Lots 1-2 + volet export
+du Lot 3), après un commit de sauvegarde intermédiaire `0f480b8` explicitement
+étiqueté « BRANCHE ROUGE » (1 test cassé pendant l'écriture, corrigé avant
+livraison — voir « Corrigé » ci-dessous).
+
+### Ajouté
+
+- **Axe `intention` — événement daté et périssable, jamais un second score**
+  (`cc99302`, ADR 0004 révisée `6ba11e2`) — `diagnostic/intent.py::evaluer_intention()`
+  réutilise **uniquement** les deux primitives pures `_resolve`/`_check_passes`
+  de `scoring.py`, rejoue les checks d'une rubrique d'intention un par un, et
+  produit une liste d'`EvenementIntention` (`dimension`, `preuve`,
+  `date_evenement`, `expire_le`, `intensite`, `citable`, `fiabilite`).
+  `ScoringEngine.score()` n'est **jamais** appelé sur cet axe.
+  `diagnostic/models.py` : nouveau dataclass `EvenementIntention` +
+  `Diagnostic.evenements_intention: list[EvenementIntention]` (défaut `[]`,
+  ajout strictement additif) ; `to_json(default=str)` pour sérialiser les
+  champs `date`. `tests/test_intent.py` : **14 tests**.
+- **`diagnostic/collectors/_decay.py`** (nouveau) — `decroissance()`, fonction
+  pure (`poids = 2^(-âge/demi_vie)`, plancher configurable), **strictement
+  informationnelle** : jamais câblée dans le scoring ni dans `intent.py`. Usage
+  actuel : `scripts/benchmark_intention.py`. `tests/test_decay.py` : **9 tests**.
+- **`diagnostic/collectors/legitimite.py`** (nouveau, palier 0) — dérivé de
+  `_website_signals` (aucun réseau propre), vérifie `reachable` avant toute
+  détection (même discipline que `_places.py`). Alimente le **besoin**
+  (nouvelle dimension `legitimite_conformite`, poids 10, dans
+  `rubric_persona1.yaml`) : une certification affichée est un état, jamais un
+  événement. `tests/test_legitimite.py` : **9 tests**.
+- **`diagnostic/collectors/website.py`** étendu — `vocabulaire_intention`
+  (constructeur), champs dérivés `offre_detectee`/`offre_detectee_date`,
+  escalade « page carrières » (Lot 2) : **un seul** appel réseau supplémentaire
+  via `api_io.call()`, déclenché uniquement si une offre est détectée ET qu'un
+  lien carrières est repéré sur la page d'accueil. `tests/test_website_intention.py` :
+  **10 tests**.
+- **`diagnostic/vault_schema.py`** — 3 champs optionnels, défaut `None`,
+  rétro-compatibles : `signal_intention`, `date_intention`,
+  `intention_expire_le`.
+- **`diagnostic/serializers.py`** — dérivation des 3 champs sous contrainte
+  dure `citable=True` (symétrique de la règle déjà en vigueur pour
+  `signal_chaud`) ; nouvelle section « Signaux d'intention » du rapport
+  Markdown (visible même pour un événement non `citable`, usage interne).
+  `tests/test_serializers_intention.py` : **10 tests**.
+- **`diagnostic/vault_io.py::append_historique()`** (nouveau) —
+  `vault/40-Historique/<slug>.jsonl`, append-only, jamais `os.replace()` (même
+  mécanisme que `_journal()`). **Infrastructure posée, non exploitée** par les
+  Lots 1/2 : aucun collecteur actuel n'a besoin de comparer deux lectures
+  successives. `tests/test_vault_io_historique.py` : **6 tests**.
+- **`knowledge/intent_persona1.yaml`, `knowledge/vocabulaire_intention_persona1.yaml`,
+  `knowledge/certifications_quebec.yaml`** (nouveaux) — tous marqués
+  `[À CALIBRER]` : brouillons de travail rendant les Lots 1/2 exécutables et
+  testables, **aucun seuil validé par la consultante**.
+- **`knowledge/rubric_persona1.yaml`** — nouvelle dimension
+  `legitimite_conformite` (poids 10), `reviews.date_dernier_avis` ajouté à la
+  dimension `avis` (reclassé côté besoin, un état ne « vieillit » pas), poids
+  rééquilibrés pour un total de 100 (`site_web` 25→20, `presence_locale`
+  20→15).
+- **`knowledge/export_kemana.yaml`** — 10 → 13 colonnes : « Signal intention »,
+  « Date intention », « Intention expire » (purement additives, jamais
+  utilisées pour trier ou disqualifier).
+- **`scripts/benchmark_intention.py`** (nouveau) — banc d'essai chiffré et
+  reproductible sur les 9 entreprises fictives du faux serveur d'intégration,
+  sans clé API. **Résultat mesuré le 2026-08-03** : score_global min 36,9 /
+  max 81,5 / moyenne 46,8 ; `signal_chaud` 2 distincts sur 9 ; `signal_intention`
+  1 sur 9 (« Thermo Marchand ») ; quadrant Q1=1, Q2=0, Q3=6, Q4=2 ; couverture
+  moyenne 0,65. **Le 2/9 est un plafond de fixture** (le faux serveur ne
+  modélise que 2 profils de site — 7 « pauvres », 2 « correctes »), pas une
+  mesure de performance commerciale : n=1 sur l'axe intention, seuil de
+  quadrant `[À CALIBRER]`, aucun dénominateur commercial (`motif_rejet`
+  n'existe pas).
+- **`tests/integration/test_e2e_intention.py`** (nouveau) — **10 tests** sur le
+  faux serveur : discrimination à besoin égal (twin de contrôle recruteuse
+  / non recruteuse), escalade page carrières via le bus réseau, citabilité,
+  trois états préservés (site injoignable / vocabulaire non configuré →
+  `None`, jamais d'événement fabriqué).
+- **Invariants I23/I24** (`docs/architecture/invariants.md`) — I23 : l'axe
+  intention ne modifie jamais `scoring.py` et n'agrège jamais en score. I24 :
+  `citable=True` est obligatoire pour dériver `signal_intention`.
+
+### Modifié
+
+- `CLAUDE.md`, `README.md`, `docs/architecture/README.md`,
+  `docs/architecture/flux-donnees.md`, `docs/architecture/invariants.md`,
+  `docs/architecture/PARADIGMES.md` §P6, `.claude/agents/agent-architecte.md`
+  — statut de l'ADR 0004 passé de `[PROPOSÉ]` à « Lots 1-2 + export du Lot 3
+  livrés, reste non fait » ; comptes de tests re-vérifiés (650/56/49/34) ;
+  compte d'invariants re-vérifié (24).
+- `tests/test_j5_phase0.py::test_to_json_contrat_inchange` — mis à jour pour
+  refléter l'ajout légitime d'`evenements_intention` au contrat JSON de
+  `Diagnostic` (ajout, pas suppression), avec justification explicite en
+  docstring plutôt qu'un contournement muet.
+
+### Corrigé
+
+- **Commit de sauvegarde `0f480b8` explicitement étiqueté « BRANCHE ROUGE »**
+  (`1 failed, 574 passed` au moment de la capture) : l'ajout de champs à
+  `Diagnostic` cassait `test_to_json_contrat_inchange`. Corrigé dans `cc99302`
+  en mettant à jour le test avec justification, pas en contournant le contrat.
+
+### Ce qui reste NON mesurable / NON implémenté
+
+- **Lot 0** (mesure de conversion — `motif_rejet`, états `rdv`/`client`) : non
+  câblé. Sans lui, impossible de mesurer si le quadrant Q1-Q4 améliore quoi
+  que ce soit — recommandé avant toute **exploitation réelle** du quadrant.
+- **Lot 0bis** (calibration graduée de `entretien.fraicheur_mois`,
+  `diagnostic/collectors/_bareme.py`) : non fait — le check reste binaire
+  (`lte 18`), inchangé.
+- **Reste du Lot 3** : cockpit (exposition en lecture), 4ᵉ requête Dataview
+  dans `vault/00-Dashboard.md`, `FicheProspect.quadrant` : non faits.
+- **`diagnostic/collectors/legitimite.py` résout le marché en dur sur
+  `"quebec"`** (`MARCHE_CERTIFICATIONS_PAR_DEFAUT`), pas par fiche — limite
+  symétrique de celle déjà acceptée pour `vocabulaire_offre` (ADR 0003).
+- **Robots.txt non vérifié** sur l'escalade page carrières — aucun précédent
+  de ce contrôle dans le dépôt pour ce fetch supplémentaire.
+- **Les trois YAML d'intention sont des brouillons `[À CALIBRER]`** : aucun
+  seuil (demi-vie, fenêtre de péremption, seuil de quadrant) n'a été validé
+  par la consultante.
+- **`docs/adr/0004-*.md` reste dans son en-tête d'origine (« proposée »)** :
+  les ADR sont immuables une fois acceptées — l'écart entre l'en-tête et
+  l'implémentation réelle est documenté ici et dans `docs/adr/README.md`,
+  pas corrigé dans le fichier de l'ADR lui-même (même traitement que l'écart
+  déjà signalé pour l'ADR 0003).
+- Aucune économie GreenIT chiffrable (inchangé depuis l'itération 2).
+- Aucune rubrique non-HVAC n'existe encore (inchangé depuis l'itération 3).
+- **Dette non traitée** : `diagnostic/greenit.py` toujours absent de la liste
+  `_check_garde_fous_bus` (inchangé depuis l'itération 2 — invariant tenu par
+  le filet générique en `rglob`).
+- **Hors périmètre de fichiers de cet agent** : `tests/integration/README.md`
+  annonce encore 46 tests pour `tests/integration` (réel 56) — fichier sous
+  `tests/`, explicitement hors du périmètre d'écriture de
+  `agent-documentation`. Signalé, non corrigé ici.
+
+---
+
 ## [Itération 3] — 2026-08-02/03 — garde-fou documentaire, trois états, multi-industrie, ADR intention
 
 Quatre chantiers, chacun recalé au moins une fois par la revue avant

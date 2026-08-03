@@ -40,6 +40,13 @@ d'observation (cockpit) :
 - **J5 — sortie + préflight** : `run_export.py` (fiches `valide` → liste Kemana
   CSV/JSONL, lecture seule, opt_out absolu), `run_usage.py` (agrégat `api_usage.log`,
   snapshot vault), `run_preflight.py` (9 contrôles GO/NO-GO, pré-condition cron J7).
+- **Axe intention (ADR 0004, Lots 1-2 + volet export du Lot 3 livrés)** :
+  second axe, orthogonal au besoin — `diagnostic/intent.py::evaluer_intention()`
+  produit une liste d'`EvenementIntention` datés et périssables, jamais un
+  second score. `diagnostic/scoring.py` reste intouché (`git diff` vide,
+  vérifié). Reste non fait : Lot 0/0bis (mesure `motif_rejet`, recalibration
+  graduée de `fraicheur_mois`) et le reste du Lot 3 (cockpit, 4ᵉ requête
+  Dataview, champ `quadrant`). Détail plus bas.
 - **CORE — orchestrateur DAG « Kemana-Flow »** : `run_pipeline.py` +
   `diagnostic/orchestrator.py` + `dag_pipeline.yaml`. Ordonnancement déterministe
   de toute la chaîne, instance `ApiIO` **unique** injectée, verrou de run.
@@ -50,7 +57,7 @@ d'observation (cockpit) :
 - **J6 — outreach** : **non implémenté, non activable** (validation juridique
   CASL / nLPD + art. 3 LCD / RGPD / AI Act requise au préalable).
 
-## ⚠️ État réel du système (vérifié le 2026-08-01)
+## ⚠️ État réel du système (vérifié le 2026-08-03)
 
 Ces limites sont **structurelles et voulues** : ce sont les garde-fous qui
 fonctionnent, pas des défauts à contourner. Ne les masque jamais dans une
@@ -72,6 +79,21 @@ documentation ou un rapport.
   personne n'a encore écrit `knowledge/rubric_<secteur>.yaml` ni
   `knowledge/vocabulaire_<secteur>.yaml` pour un secteur autre que HVAC — c'est
   un travail de jugement métier, pas une tâche de développement restante.
+- **Les trois YAML de l'axe intention sont des BROUILLONS `[À CALIBRER]`** :
+  `knowledge/intent_persona1.yaml`, `knowledge/vocabulaire_intention_persona1.yaml`,
+  `knowledge/certifications_quebec.yaml`. Aucun seuil (demi-vie, fenêtre de
+  péremption, plancher de décroissance, seuil de quadrant) n'a été validé par
+  la consultante — ce sont des points de départ raisonnables, pas des mesures.
+- **`diagnostic/collectors/legitimite.py` résout le marché en dur sur
+  `"quebec"`** (`MARCHE_CERTIFICATIONS_PAR_DEFAUT` dans `vault_runner.py` et
+  `run_diagnostic.py`), pas par fiche — limite symétrique de celle déjà
+  acceptée pour `vocabulaire_offre` (ADR 0003).
+- **`VaultIO.append_historique()` est posée, non exploitée** : aucun
+  collecteur actuel n'écrit dans `vault/40-Historique/` ; l'infrastructure
+  existe pour ne pas découvrir le besoin d'historisation a posteriori.
+- **Robots.txt non vérifié** sur l'escalade « page carrières » de
+  `WebsiteCollector` (Lot 2, ADR 0004) — aucun précédent de ce contrôle
+  n'existe ailleurs dans le dépôt pour ce fetch supplémentaire.
 - Lever les trois premiers points relève de la **Phase D** (paramétrage par
   l'opératrice : variables d'environnement + YAML), pas du développement.
 
@@ -97,6 +119,11 @@ Chaîne : `entrée → collecteurs → signaux → scoring → synthèse+QA → 
    réellement évaluée. Règle non négociable, née de trois occurrences du même
    défaut corrigées en une itération (moteur, collecteurs Google Places,
    vocabulaire métier codé en dur) : voir `docs/architecture/PARADIGMES.md` §P4.
+6. **Axe intention orthogonal au besoin** (ADR 0004) : `Diagnostic.evenements_intention`
+   est une liste d'`EvenementIntention` datés, jamais un second score. Le
+   moteur (`ScoringEngine.score()`) n'est **jamais** appelé pour cet axe —
+   seules ses primitives pures `_resolve`/`_check_passes` sont réutilisées par
+   `diagnostic/intent.py`. Détail : section « Axe intention » plus bas.
 
 ### J2 — Bus vault (architecture micro-ordinateur)
 
@@ -283,6 +310,76 @@ Règles non négociables :
   contenu métier de ces fichiers reste un travail humain, hors périmètre
   architecture.
 
+### Axe intention — ADR 0004 (Lots 1-2 + volet export du Lot 3, livrés)
+
+Décision : `docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`
+(révisée `6ba11e2` avant toute implémentation). Implémentation : commit
+`cc99302`. Statut réel : **Lots 1 et 2 + volet export du Lot 3 livrés** ; Lot 0,
+Lot 0bis et le reste du Lot 3 **non faits** (voir plus bas).
+
+Règles non négociables :
+- **Jamais un second score.** `diagnostic/intent.py::evaluer_intention()`
+  rejoue les checks d'une rubrique d'intention un par un et produit une liste
+  d'`EvenementIntention` (`dimension`, `preuve`, `date_evenement`, `expire_le`,
+  `intensite`, `citable`, `fiabilite`) — jamais un dict de scores. Seules les
+  primitives pures `_resolve`/`_check_passes` de `scoring.py` sont réutilisées ;
+  `ScoringEngine.score()` (agrégation, renormalisation, `_couverture`) n'est
+  **jamais** appelé sur cet axe. `git diff diagnostic/scoring.py` reste vide —
+  c'est l'invariant dur de cette ADR.
+- **Décroissance strictement informationnelle** : `diagnostic/collectors/_decay.py::decroissance()`
+  (`poids = 2^(-âge/demi_vie)`, plancher configurable) n'est **jamais** câblée
+  dans le scoring ni dans `intent.py`. La péremption réelle est une simple
+  comparaison de dates (`date.today() <= expire_le`), calculée une fois. Usage
+  actuel : `scripts/benchmark_intention.py` (affichage informationnel).
+- **`citable=True` obligatoire pour dériver `signal_intention`** : un
+  `EvenementIntention` avec `citable=False` peut alimenter le quadrant en
+  interne, jamais la phrase envoyée au prospect (`serializers.py::diagnostic_to_fiche`
+  ne dérive `signal_intention`/`date_intention`/`intention_expire_le` que du
+  premier événement `citable=True`, trié du plus récent au plus ancien).
+- **Un événement non daté est écarté, jamais dégradé en état permanent** :
+  même discipline à trois états que le besoin (règle #5 ci-dessus).
+- **`legitimite.py`** (nouveau collecteur, palier 0, dérivé de
+  `_website_signals`, aucun réseau propre) alimente le **besoin**, pas
+  l'intention (une certification affichée est un état, jamais un événement) :
+  nouvelle dimension `legitimite_conformite` (poids 10) dans
+  `rubric_persona1.yaml`, poids rééquilibrés pour rester à 100 (`site_web`
+  25→20, `presence_locale` 20→15). `reviews.date_dernier_avis` reclassé côté
+  besoin dans la dimension `avis` (pur ajout YAML, zéro nouveau code).
+- **`WebsiteCollector`** gagne `vocabulaire_intention` (constructeur) et deux
+  champs dérivés `offre_detectee`/`offre_detectee_date` ; si une offre est
+  détectée et qu'un lien carrières est repéré sur la page d'accueil, **un seul**
+  appel supplémentaire via `api_io.call()` (Lot 2) fetch la page carrières pour
+  en extraire la date.
+- **`FicheProspect`** gagne 3 champs optionnels, défaut `None`, rétro-compatibles :
+  `signal_intention`, `date_intention`, `intention_expire_le`.
+- **`knowledge/export_kemana.yaml`** passe de 10 à 13 colonnes (« Signal
+  intention », « Date intention », « Intention expire » — purement additives,
+  jamais utilisées pour trier ou disqualifier).
+- **`VaultIO.append_historique()`** (`vault/40-Historique/<slug>.jsonl`,
+  append-only, jamais `os.replace()`) : infrastructure posée, **non exploitée**
+  par les Lots 1/2 — aucun collecteur actuel n'a besoin de comparer deux
+  lectures successives.
+- **Banc d'essai reproductible** : `scripts/benchmark_intention.py` (mesuré le
+  2026-08-03, faux serveur d'intégration, 9 entreprises HVAC fictives) —
+  score_global min 36,9 / max 81,5 / moyenne 46,8 ; `signal_chaud` 2 distincts
+  sur 9 ; `signal_intention` 1 sur 9 (« Thermo Marchand ») ; quadrant Q1=1,
+  Q2=0, Q3=6, Q4=2 ; couverture moyenne 0,65. **Le 2/9 est un plafond de
+  fixture** (le faux serveur ne modélise que 2 profils de site : 7 « pauvres »,
+  2 « correctes »), pas une mesure de performance commerciale — n=1 sur l'axe
+  intention, seuil de quadrant `[À CALIBRER]`, aucun dénominateur commercial
+  (`motif_rejet` n'existe pas).
+
+**Non fait, à écrire tel quel** :
+- **Lot 0** (mesure de conversion — `motif_rejet`, états `rdv`/`client`) : non
+  câblé. Sans lui, impossible de mesurer si Q1/Q2 convertissent mieux que
+  Q3/Q4 — l'hypothèse commerciale de l'ADR reste une hypothèse.
+- **Lot 0bis** (calibration graduée de `entretien.fraicheur_mois`, `_bareme.py`) :
+  non fait — `diagnostic/collectors/_bareme.py` n'existe pas, le check reste
+  binaire (`lte 18`).
+- **Reste du Lot 3** : cockpit (exposition en lecture), 4ᵉ requête Dataview
+  croisant score/intention dans `vault/00-Dashboard.md`, champ
+  `FicheProspect.quadrant` — **non faits**.
+
 ### J4 — Agent de découverte
 
 Règles non négociables J4 :
@@ -309,6 +406,7 @@ Règles non négociables J4 :
 | `social.py` | 0 | aucun — dérivé de `_website_signals.social_links` | `plateformes_mentionnees=[]` |
 | `gbp.py` | 1 | Google Places `text_search` via api_io | stub `verified=None` |
 | `reviews.py` | 1 | Google Places `text_search` + `place_details` via api_io | stub `count=None` |
+| `legitimite.py` | 0 | aucun — dérivé de `_website_signals` (ADR 0004) | `None` par catégorie si motifs non configurés ou site injoignable |
 
 ### Schéma vault + exports
 
@@ -329,9 +427,14 @@ vault/
 │  └─ fiche-prospect.md         ← gabarit de nouvelle fiche
 └─ 00-Dashboard.md              ← 3 requêtes Dataview (pipeline, top gaps, relance)
 
+40-Historique/                  ← ADR 0004 : vault/40-Historique/<slug>.jsonl
+                                  (append_historique(), infrastructure posée,
+                                   NON exploitée par les Lots 1/2)
+
 exports/                        ← HORS vault, dans .gitignore (artefacts J5)
 ├─ kemana_tous_AAAA-MM-JJ.csv  ← liste Kemana (utf-8-sig pour Excel FR)
-└─ kemana_tous_AAAA-MM-JJ.anomalies.txt  ← rapport anomalies (email manquant, etc.)
+├─ kemana_tous_AAAA-MM-JJ.anomalies.txt  ← rapport anomalies (email manquant, etc.)
+└─ benchmark_intention.json    ← sortie de scripts/benchmark_intention.py (ADR 0004)
 
 .cache/                         ← HORS vault, gitignoré
 ├─ api_io/                      ← cache disque des appels API
@@ -357,7 +460,8 @@ runs.log                        ← journal des écritures vault, JSONL (gitigno
 docs/
 ├─ architecture/                ← README (vue + Mermaid), invariants, flux-donnees
 ├─ adr/                         ← décisions structurantes (0001 DAG, 0002 GreenIT,
-│                                  0003 multi-industrie, 0004 intention [PROPOSÉ])
+│                                  0003 multi-industrie, 0004 intention — Lots 1-2
+│                                  + export du Lot 3 implémentés, reste NON fait)
 ├─ agents/ECOSYSTEME.md         ← cartographie des agents, invocation, amélioration
 ├─ CHANGELOG.md                 ← Keep a Changelog, une section par itération
 └─ strategie/                   ← PROPRIÉTÉ DU CHEF DE PROJET — lecture seule
@@ -412,6 +516,10 @@ python run_pipeline.py --icp persona1-quebec --vault chemin/vers/vault
 python run_pipeline.py --dag autre_graphe.yaml        # graphe alternatif
 # Code de sortie : 0 = chaîne OK, 1 = arrêt (NO-GO, budget dépassé, nœud bloquant)
 
+# Axe intention (ADR 0004) — banc d'essai reproductible, sans clé API
+python scripts/benchmark_intention.py                          # rapport console + JSON
+python scripts/benchmark_intention.py --json exports/rapport.json
+
 # Cockpit opérateur (lecture seule)
 pip install -r webapp/backend/requirements.txt
 uvicorn webapp.backend.app:app --reload --port 8000   # API + /docs
@@ -426,6 +534,7 @@ pytest tests/ -v -k "integration"       # test end-to-end §8.6
 pytest tests/ -v -k "phase_d"          # tests Phase D J3 uniquement
 pytest tests/ -v -k "icp or discovery or enrichment"  # tests J4
 pytest tests/ -v -k "orchestrator or pipeline_cli"    # tests CORE
+pytest tests/ -v -k "intent or decay or legitimite or intention"  # axe intention (ADR 0004)
 pytest webapp/backend/tests -q          # backend cockpit
 
 # Contrôles d'invariants (à lancer avant toute revue)
@@ -489,7 +598,7 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
    Le garde-fou documentaire lui-même (`tests/test_doc_coherence.py`) est né
    d'une relance de ce type. Détail : `docs/architecture/PARADIGMES.md` §P7.
 
-## État des tests (575 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration)
+## État des tests (650 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration, axe intention)
 
 > Le compte évolue à chaque itération : **re-compte, ne recopie pas.**
 > `python -m pytest tests/ --collect-only -q | tail -2`
@@ -519,7 +628,14 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
 | `test_pipeline_cli.py` | CORE : CLI `run_pipeline.py` | 4 |
 | `test_greenit.py` | GreenIT : config, routage déterministe, max_tokens, empreinte, troncature, ledger, rétro-compat, intégration synthesis | **78** |
 | `test_doc_coherence.py` | Garde-fou : les chiffres documentés (tests, routes, écrans, invariants, agents) doivent être les chiffres réels | **9** |
-| `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur | **46** |
+| `test_intent.py` | ADR 0004 : `evaluer_intention()` — nature `evenement`/`etat`, non-agrégation, citabilité, péremption, tri | **14** |
+| `test_decay.py` | ADR 0004 : `decroissance()` pure — bornes, demi-vie, plancher, monotonie | **9** |
+| `test_legitimite.py` | ADR 0004 : `LegitimiteCollector` — trois états, anti-fuite par marché/secteur | **9** |
+| `test_website_intention.py` | ADR 0004 : `offre_detectee`/`offre_detectee_date`, escalade page carrières | **10** |
+| `test_config_intent.py` | ADR 0004 : `load_rubrique_intention`, `load_vocabulaire_intention`, `load_certifications` | **7** |
+| `test_serializers_intention.py` | ADR 0004 : dérivation `signal_intention`/`date_intention`/`intention_expire_le`, contrainte `citable=True` | **10** |
+| `test_vault_io_historique.py` | ADR 0004 : `append_historique()` — append-only, jamais `os.replace()` | **6** |
+| `tests/integration/` | e2e réels contre un faux serveur HTTP local, sans clé : bus, découverte, diagnostic, export, orchestrateur, axe intention | **56** |
 | `webapp/backend/tests/` | Cockpit : 10 routes, lecture seule, GreenIT, SSE, dégradation vault vide, **convergence socle ⇄ cockpit** | **49** |
 | `webapp/frontend/src/__tests__/` | Cockpit : api, dashboard, prospects, détail, greenit (Vitest) | **34** |
 
@@ -588,37 +704,28 @@ tenant). Déclenchement conditionné à un **seuil de tenants payants défini à
 l'avance**, pas à une intuition. Le vault reste la source de vérité : il n'est
 **pas** un read-model.
 
-### ADR 0004 — Axe `intention` : `[PROPOSÉ — AUCUNE LIGNE DE CODE LIVRÉE]`
+### ADR 0004 — Axe `intention` : Lots 1-2 + volet export du Lot 3 **livrés**, reste non fait
 Décision : `docs/adr/0004-axe-intention-et-collecteurs-osint-cibles.md`
-(commit `f36c276`, premier jet ; **révisée le même jour par `6ba11e2`**, avant
-toute implémentation — vérifié : `git show --stat f36c276 6ba11e2` ne touche
-que le fichier ADR, toujours zéro ligne de code).
-- **Pas un second score.** `Diagnostic` gagnerait un seul champ,
-  `evenements_intention: list[EvenementIntention]` — une liste de faits datés
-  et périssables (ex. une offre de recrutement marketing), chacun avec sa
-  propre date de péremption calculée une fois. Le design du premier jet
-  (`scores_intention: dict[str, float]`) est **explicitement retiré** :
-  « un score n'a pas de date, or la date EST l'information ». Les deux axes
-  ne doivent **jamais** se fondre dans un score composite ni produire un tri
-  de priorité automatique — la mise en relation besoin/intention passerait
-  par une **table de correspondance déterministe** (quadrant Q1-Q4, purement
-  informationnel), jamais par un calcul.
-- Réutiliserait seulement les primitives pures `_resolve`/`_check_passes` de
-  `scoring.py`, **jamais** l'agrégation de `ScoringEngine.score()` (renormaliser
-  et moyenner n'a pas de sens pour une liste d'événements). Preuve d'acceptation
-  prévue : `git diff diagnostic/scoring.py` vide après implémentation.
-- Deux collecteurs retenus si implémenté : extension de `website.py` (signal
-  de recrutement marketing, entièrement `citable`, zéro nouveau réseau en
-  Lot 1) et `legitimite.py` (nouveau, palier 0, licences/certifications — côté
-  **besoin**, pas intention : une certification affichée est un état, pas un
-  événement). Cinq autres candidats déjà écartés par l'étude préalable restent
-  écartés (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via
-  API externe).
-- ⚠️ **Réserve de méthode** : l'ADR révisée cite une note de recherche
+(révisée `6ba11e2` avant toute implémentation). Implémentation : `cc99302`.
+Description complète de ce qui est livré : section « Axe intention » plus
+haut, dans « Architecture (à respecter) ». Ce qui reste :
+- **Lot 0** — `motif_rejet`, états `rdv`/`client` : sans eux, impossible de
+  mesurer si le quadrant Q1-Q4 améliore quoi que ce soit. Recommandé **avant
+  l'exploitation réelle** du quadrant (un export priorisé, un run réel), pas
+  avant la construction du squelette (déjà construite).
+- **Lot 0bis** — calibration graduée de `entretien.fraicheur_mois`
+  (`diagnostic/collectors/_bareme.py`, `fraicheur_score`) : non fait, changerait
+  un score déjà en production, exigerait un test de non-régression explicite
+  sur `signal_chaud`.
+- **Reste du Lot 3** — cockpit (exposition en lecture), 4ᵉ requête Dataview
+  dans `vault/00-Dashboard.md`, `FicheProspect.quadrant` : non faits.
+- ⚠️ **Réserve de méthode inchangée** : les YAML de rubrique/vocabulaire
+  d'intention (`knowledge/intent_persona1.yaml`,
+  `knowledge/vocabulaire_intention_persona1.yaml`) citent une note de recherche
   documentaire qui pose elle-même la limite — « aucune source ne franchit le
   dernier pas entre signal ouvert observé et cette PME va acheter du conseil
   en branding ; cette hypothèse appartient à la consultante, pas à la
-  recherche ». Chaque référence citée est marquée `[NON LU]` : `WebFetch` a
-  reçu un HTTP 403 systématique dans cette session, aucun texte intégral n'a
-  été lu, seulement des résumés de recherche.
+  recherche ». Chaque référence citée reste marquée `[NON LU]` : `WebFetch`
+  avait reçu un HTTP 403 systématique lors de la rédaction de l'ADR, aucun
+  texte intégral n'a été lu, seulement des résumés de recherche.
 - Détail complet : `docs/architecture/PARADIGMES.md` §P6.

@@ -9,12 +9,13 @@
 > tout agent qui reprend le projet. Quinze minutes de lecture suffisent à
 > obtenir la carte mentale du système.
 >
-> **Vérifié par exécution le 2026-08-03**, commit de tête `30cb6cf`, branche
+> **Vérifié par exécution le 2026-08-03**, commit de tête `cc99302`, branche
 > `claude/diagnostic-as-is-fonctionnalites-7kzdj4` (l'ADR 0004 a été révisée
-> une première fois par `6ba11e2` avant toute implémentation — voir §P6, qui
-> reflète le design révisé, pas le premier jet de `f36c276`). Chaque chiffre
-> cité a été re-mesuré juste avant l'écriture de ce document (voir le rapport
-> de l'itération qui l'a produit pour le détail des commandes).
+> une première fois par `6ba11e2` avant toute implémentation, puis ses Lots
+> 1-2 + volet export du Lot 3 ont été implémentés par `cc99302` — voir §P6,
+> qui reflète l'état réel du code, pas seulement le design révisé). Chaque
+> chiffre cité a été re-mesuré juste avant l'écriture de ce document (voir le
+> rapport de l'itération qui l'a produit pour le détail des commandes).
 >
 > Règle de lecture : une bascule **implémentée** décrit du code vérifié par
 > `Read`/`Grep`/exécution. Une bascule **`[PROPOSÉ — NON IMPLÉMENTÉ]**` décrit
@@ -125,10 +126,15 @@ python -m pytest tests/test_doc_coherence.py -q
 
 ## P6 — De l'état à l'événement : le virage intent-based
 
-**Statut : `[PROPOSÉ — NON IMPLÉMENTÉ]`.** ADR [0004](../adr/0004-axe-intention-et-collecteurs-osint-cibles.md),
+**Statut : Lots 1-2 + volet export du Lot 3 IMPLÉMENTÉS** (commit `cc99302`).
+ADR [0004](../adr/0004-axe-intention-et-collecteurs-osint-cibles.md),
 commit `f36c276` (premier jet), **révisée le même jour par `6ba11e2`** avant
-toute implémentation. Vérifié : `git show --stat f36c276 6ba11e2` ne touche
-que `docs/adr/0004-*.md` — toujours zéro ligne de code.
+toute implémentation. Lot 0, Lot 0bis et le reste du Lot 3 restent
+`[NON FAITS]` — voir en bas de section. L'en-tête de l'ADR elle-même dit
+encore « proposée » : les ADR sont immuables une fois acceptées, l'écart entre
+en-tête et implémentation réelle est documenté dans `docs/adr/README.md`, pas
+corrigé dans le fichier de l'ADR (même traitement que l'écart déjà signalé
+pour l'ADR 0003).
 
 **Le premier jet lui-même a été corrigé avant d'être implémenté** — un fait à
 documenter plutôt qu'à masquer, puisque c'est exactement le motif
@@ -140,17 +146,21 @@ code ne s'appuie dessus.
 
 | | |
 |---|---|
-| **Ce qui est proposé (design révisé)** | Pas un second score. `Diagnostic` gagne un seul champ, `evenements_intention: list[EvenementIntention]` — une **liste de faits datés et périssables** (ex. une offre d'emploi marketing détectée), chacun portant sa propre date d'observation et sa propre date de péremption calculée une fois. Le score de **besoin** reste un **état** permanent, inchangé, sans date. `scores_intention: dict[str, float]` — la version du premier jet — est **explicitement retiré** du design : « un score n'a pas de date, or la date EST l'information » (note de cadrage retenue dans l'ADR). |
+| **Ce qui est livré (design révisé, implémenté)** | Pas un second score. `Diagnostic` gagne un seul champ, `evenements_intention: list[EvenementIntention]` — une **liste de faits datés et périssables** (une offre d'emploi de production détectée, une certification affichée), chacun portant sa propre date d'observation et sa propre date de péremption calculée une fois (`diagnostic/models.py`). Le score de **besoin** reste un **état** permanent, inchangé, sans date. `scores_intention: dict[str, float]` — la version du premier jet — a été **explicitement retirée** du design implémenté : « un score n'a pas de date, or la date EST l'information » (note de cadrage retenue dans l'ADR, vérifiée par lecture de `diagnostic/intent.py`). |
 | **Pourquoi séparer les deux axes, et pourquoi pas même un second score** | Trois raisons, vérifiées dans le code, pas une préférence de style (ADR 0004, §D1) : (1) le besoin est déjà l'inverse d'une note de satisfaction (`rubric_persona1.yaml` : « un score BAS = un prospect CHAUD ») — un événement d'intention, positif par nature, fusionné au même total ferait dépendre le sens du nombre final du hasard de la combinaison ; (2) **même classe de défaut que P4** — fusionner « pas de besoin pressant » et « pas d'événement détecté » dans un seul nombre, ou même les stocker comme deux scores comparables, reproduit la perte d'information déjà corrigée pour `inconnu`/`echec` ; (3) une date n'est pas une magnitude — un score /100 n'a pas de champ pour « ceci expire le [date] », et pré-décroître la valeur avant un test numérique **cacherait** l'information la plus importante (la date elle-même) dans un flottant. |
-| **La table de correspondance, pas le calcul (D5)** | Besoin et intention se combinent en un **quadrant informationnel** (Q1 Fenêtre / Q2 Concurrence / Q3 Réservoir / Q4) par une **table de correspondance déterministe** sur deux libellés discrets (`fort`/`faible` de chaque côté) — jamais un produit, jamais une somme pondérée. Le quadrant (`FicheProspect.quadrant`, Lot 3, non implémenté) reste strictement informationnel : jamais utilisé pour trier ou disqualifier automatiquement. |
-| **Ce que ça capitalise sur P4** | `scoring.py` reste inchangé — preuve attendue : `git diff diagnostic/scoring.py` vide après implémentation. Mais la réutilisation n'est **plus** celle envisagée au premier jet : seules les deux primitives pures `_resolve`/`_check_passes` sont réutilisées, jamais l'agrégation de `ScoringEngine.score()` — l'agrégation renormalise et fait la moyenne, deux opérations qui n'ont pas de sens pour une liste d'événements datés. |
-| **Ce que la conception interdit explicitement (ADR 0004 §D13)** | Score composite besoin × intention ou tri de priorité automatique. Modifier `scoring.py`. Introduire un classificateur d'intention par LLM, à quelque stade que ce soit. Construire un modèle appris (machine learning) — la littérature citée (réserve `[NON LU]` ci-dessous) va dans le sens inverse à ce volume de données. Ressusciter les collecteurs déjà écartés par l'étude préalable (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via API externe). Exploiter le quadrant en conditions réelles (export livré, run priorisé) avant que `motif_rejet` et les états post-`contacte` n'existent pour mesurer si Q1/Q2 convertissent mieux que Q3/Q4 — **gate à deux vitesses** : le squelette peut se construire, son exploitation réelle attend la mesure. |
-| ⚠️ **Réserve de méthode, à ne jamais taire** | L'ADR révisée intègre une note de recherche documentaire qui porte, noir sur blanc, exactement la réserve attendue : **« aucune source ne franchit le dernier pas entre signal ouvert observé et cette PME va acheter du conseil en branding. Cette hypothèse appartient à la consultante, pas à la recherche. »** Chaque référence citée (Dawes 1979, D'Haen et al. 2016, Gutierrez et al. 2020, entre autres) est marquée **`[NON LU]`** : identifiée avec précision (titre, auteurs, revue, année, DOI si disponible) mais vérifiée au seul niveau du résumé — `WebFetch` a reçu un HTTP 403 systématique dans cette session, **aucun texte intégral n'a été lu**. Cette limite s'applique par extension à toute affirmation de ce document qui s'appuie sur cette ADR ou sur l'étude OSINT qui la précède. |
-| **Prochaine étape si implémenté** | Lotissement révisé : Lot 0 (prérequis de mesure — `motif_rejet`, états `rdv`/`client` — recommandé avant l'**exploitation réelle**, pas avant la construction) ; Lot 0bis (calibration de `entretien.fraicheur_mois`, change un score déjà en production, exige un test de non-régression explicite sur `signal_chaud`) ; Lot 1 (squelette de l'axe intention, zéro réseau supplémentaire) ; Lot 2 ; Lot 3. `agent-dev-python` implémente, `agent-revue` vérifie avant tout commit. Aucun de ces lots n'existe dans le dépôt à ce jour. |
-| **Vérification (ce qui est vérifiable aujourd'hui)** :
+| **La table de correspondance, pas le calcul (D5)** | Besoin et intention se combinent en un **quadrant informationnel** (Q1 Fenêtre / Q2 Concurrence / Q3 Réservoir / Q4) par une **table de correspondance déterministe** sur deux libellés discrets (`fort`/`faible` de chaque côté) — jamais un produit, jamais une somme pondérée. Implémenté et mesuré côté banc d'essai (`scripts/benchmark_intention.py`, seuil `[À CALIBRER]`), mais `FicheProspect.quadrant` (Lot 3, champ persistant) **n'existe pas encore** : le quadrant reste, dans le dépôt à ce jour, un calcul d'illustration, jamais un champ écrit dans le vault ni utilisé pour trier ou disqualifier. |
+| **Ce que ça capitalise sur P4, vérifié** | `scoring.py` reste inchangé — `git diff diagnostic/scoring.py` **re-exécuté et vide** au moment de la rédaction de cette section (commit de tête `cc99302`). La réutilisation n'est **pas** celle envisagée au premier jet : seules les deux primitives pures `_resolve`/`_check_passes` (`diagnostic/intent.py`) sont réutilisées, jamais l'agrégation de `ScoringEngine.score()` — l'agrégation renormalise et fait la moyenne, deux opérations qui n'ont pas de sens pour une liste d'événements datés. |
+| **Ce que la conception interdit explicitement (ADR 0004 §D13), tenu** | Score composite besoin × intention ou tri de priorité automatique — rien de tel dans `intent.py`/`serializers.py`. `scoring.py` non modifié. Aucun classificateur d'intention par LLM (les deux collecteurs livrés sont déterministes : `is_true`/`exists` sur un fait déjà extrait). Aucun modèle appris. Aucun des cinq collecteurs déjà écartés par l'étude préalable n'a été ressuscité (registre légal, WHOIS/RDAP, Wayback, PageSpeed, offres d'emploi via API externe). Le quadrant n'est **exploité** nulle part en conditions réelles (pas de champ persistant, pas de tri) — cohérent avec le gate à deux vitesses de l'ADR tant que `motif_rejet` n'existe pas. |
+| ⚠️ **Réserve de méthode, toujours vraie, jamais taire** | Les YAML livrés (`knowledge/intent_persona1.yaml`, `knowledge/vocabulaire_intention_persona1.yaml`) portent le même caveat que l'ADR : **« aucune source ne franchit le dernier pas entre signal ouvert observé et cette PME va acheter du conseil en branding. Cette hypothèse appartient à la consultante, pas à la recherche. »** Chaque référence citée dans l'ADR (Dawes 1979, D'Haen et al. 2016, Gutierrez et al. 2020, entre autres) reste marquée **`[NON LU]`** — vérifiée au seul niveau du résumé, jamais un texte intégral. Les trois YAML de l'axe intention sont eux-mêmes des **brouillons `[À CALIBRER]`** : aucun seuil (demi-vie, fenêtre de péremption, plancher, seuil de quadrant) n'a été validé par la consultante — le pilote doit trancher, pas le code. |
+| **Ce qui reste `[NON FAIT]`** | **Lot 0** (`motif_rejet`, états `rdv`/`client` — sans eux, impossible de mesurer si Q1/Q2 convertissent mieux que Q3/Q4, l'hypothèse centrale reste une hypothèse). **Lot 0bis** (calibration graduée de `entretien.fraicheur_mois`, `diagnostic/collectors/_bareme.py` — n'existe pas, le check reste binaire `lte 18`). **Reste du Lot 3** (cockpit, 4ᵉ requête Dataview, `FicheProspect.quadrant` persistant). Limite connue et assumée : `diagnostic/collectors/legitimite.py` résout le marché en dur sur `"quebec"` (`MARCHE_CERTIFICATIONS_PAR_DEFAUT`), pas par fiche — symétrique de la limite déjà acceptée pour `vocabulaire_offre` (ADR 0003). Robots.txt non vérifié sur l'escalade page carrières. `VaultIO.append_historique()` posée, non exploitée. |
+| **Vérification (re-exécutée pour cette section)** :
 ```bash
-git show --stat f36c276 6ba11e2      # deux commits, une seule ADR touchée, aucun fichier de code
-grep -rn "evenements_intention\|EvenementIntention\|scores_intention\|diagnostic/intent.py" diagnostic/ 2>/dev/null   # rien
+git diff diagnostic/scoring.py                      # vide — invariant dur tenu
+python -m pytest tests/test_intent.py tests/test_decay.py tests/test_legitimite.py \
+  tests/test_website_intention.py tests/test_config_intent.py \
+  tests/test_serializers_intention.py tests/test_vault_io_historique.py -q   # 65 tests
+python -m pytest tests/integration/test_e2e_intention.py -q                  # 10 tests
+python scripts/benchmark_intention.py                                       # banc d'essai reproductible
 ```
 |
 
@@ -180,7 +190,7 @@ Les sept convergent vers un seul principe : **remplacer une affirmation invérif
 - P3 remplace « le code sait que c'est du HVAC » par une résolution par fiche, vérifiée par un test qui traite un lot mixte.
 - P4 est l'instance la plus fondamentale : **l'absence d'observation n'est pas une observation négative** — répétée trois fois parce que c'est le point où la tentation de fabriquer un fait est la plus forte (un moteur, une API qui répond mal, un vocabulaire absent).
 - P5 convertit la dernière discipline purement humaine du projet (la cohérence documentaire) en contrôle exécutable, après avoir constaté que la consigne seule échouait sur son propre terrain.
-- P6, encore à l'état de proposition, applique **par avance** la leçon de P4 à un axe qui n'existe pas encore : ne pas fusionner deux jugements de nature différente avant même de les construire.
+- P6, **implémenté pour ses Lots 1-2 + volet export du Lot 3**, applique la leçon de P4 à un second axe : ne pas fusionner deux jugements de nature différente (un état permanent, un événement daté) même en les construisant l'un après l'autre.
 - P7 est le mécanisme qui a *produit* les six autres : sans la ré-exécution systématique par un agent sans droit d'écriture, plusieurs de ces corrections n'auraient probablement pas eu lieu — la revue a recalé trois chantiers sur des défauts réels (documentation 83,3 %, multi-industrie 92,3 %, scoring 78,6 %) avant qu'ils ne soient acceptés.
 
 Le fil conducteur : **ce projet ne se fie à rien qui n'ait été rejoué.** Ni un score, ni un compte de tests, ni un message de commit, ni même sa propre documentation.
@@ -195,7 +205,7 @@ Ces invariants ont traversé les sept bascules sans être remis en cause — ce 
 |---|---|---|
 | **La porte humaine** | Un agent ne peut déclencher que `decouvert → diagnostique`. `valide`, `contacte`, `rejete` restent des actes humains dans Obsidian. | `docs/architecture/invariants.md` I7 ; testé jusque dans l'exécution complète du DAG (`test_chaine_complete_ne_valide_aucune_fiche`). |
 | **Les bus uniques** | `diagnostic/vault_io.py` seul écrivain du vault ; `diagnostic/api_io.py` seul point de contact réseau. | I1 et I4. Aucune des sept bascules n'a ajouté un second écrivain ou un second chemin réseau. |
-| **La collecte est déterministe, le LLM rédige** | Les collecteurs observent des faits ; `synthesis.py` met en forme des faits déjà établis, jamais l'inverse. Repli déterministe sans clé Anthropic. | I17. P2 (GreenIT) et P6 (intention, proposé) réaffirment explicitement cette limite plutôt que de l'éroder. |
+| **La collecte est déterministe, le LLM rédige** | Les collecteurs observent des faits ; `synthesis.py` met en forme des faits déjà établis, jamais l'inverse. Repli déterministe sans clé Anthropic. | I17. P2 (GreenIT) et P6 (intention, Lots 1-2 livrés) réaffirment explicitement cette limite plutôt que de l'éroder — les deux collecteurs d'intention livrés (`website.py`, `legitimite.py`) sont déterministes, zéro LLM. |
 | **Config = donnée** | Rubriques, ICP, tarifs, colonnes d'export, stratégie GreenIT, graphe du DAG : tous en YAML, zéro logique métier codée en dur. | I16. P1, P2 et P3 sont chacune l'application de ce principe à un nouveau domaine (ordonnancement, routage de modèle, secteur). |
 | **Le vault est la source de vérité**, pas un read-model | Écarté explicitement du scénario C (nerf événementiel) par l'ADR 0001 : un event store qui projetterait le vault casserait l'auditabilité. | ADR 0001, alternatives écartées. |
 | **Aucun chiffre non mesuré présenté comme mesuré** | Coûts et empreinte énergétique restent étiquetés « estimation » tant que `api_pricing.yaml` est à 0 et que les facteurs GreenIT n'ont pas été étalonnés. | I19. Directement hérité par P2 et par la réserve de P6. |

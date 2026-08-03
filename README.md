@@ -235,7 +235,7 @@ uvicorn webapp.backend.app:app --reload --port 8000   # API + doc sur /docs
 cd webapp/frontend && npm install && npm run dev      # front sur :5173
 ```
 
-Cinq écrans : Dashboard, Prospects, Détail prospect, Usage, Préflight.
+Six écrans : Dashboard, Prospects, Détail prospect, Usage, GreenIT, Préflight.
 Thème clair et sombre. Un mode mock permet de démontrer l'application
 **hors ligne**, sans backend.
 
@@ -244,13 +244,13 @@ Thème clair et sombre. Un mode mock permet de démontrer l'application
 ## Tests
 
 ```bash
-pytest tests/ -v                            # suite complète (575 tests — J1 à J5, CORE, GreenIT, e2e)
+pytest tests/ -v                            # suite complète (650 tests — J1 à J5, CORE, GreenIT, axe intention, e2e)
 pytest tests/integration -v                 # tests d'intégration e2e (faux serveur d'API local)
 pytest tests/ -v -k "vault"                 # tests vault
 pytest tests/ -v -k "integration"           # test end-to-end
 pytest tests/ -v -k "export or usage or preflight"   # tests J5
 pytest tests/ -v -k "orchestrator or pipeline_cli"   # tests CORE
-pytest tests/integration -q                 # flux e2e réels contre un faux serveur local (46)
+pytest tests/integration -q                 # flux e2e réels contre un faux serveur local (56)
 pytest tests/test_greenit.py -q             # routage, frugalité, empreinte (78)
 pytest webapp/backend/tests -q              # backend cockpit (49 tests)
 cd webapp/frontend && npm run build && npm run test   # front (tsc + vite + vitest, 34)
@@ -280,7 +280,7 @@ raison pour laquelle les coûts et les écritures sont intégralement traçables
 | Grand livre | `api_usage.log` (coûts) · `runs.log` (écritures vault) |
 
 **Invariants de sécurité** — détail et preuves dans
-`docs/architecture/invariants.md` (22 invariants, chacun avec sa commande de
+`docs/architecture/invariants.md` (24 invariants, chacun avec sa commande de
 contrôle) :
 
 - Toute écriture dans le vault est **atomique** (`tmp` + `os.replace()`) et

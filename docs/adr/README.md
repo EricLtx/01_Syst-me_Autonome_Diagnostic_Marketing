@@ -11,7 +11,7 @@ mois faute de mémoire.
 | [0001](0001-orchestrateur-dag-deterministe.md) | Orchestrateur DAG déterministe « Kemana-Flow » | acceptée — Palier 1 implémenté | 2026-08-01 |
 | [0002](0002-greenit-efficience-et-observabilite.md) | GreenIT : efficience des appels IA et observabilité de l'empreinte | acceptée — implémentée (mécanisme ; économie non chiffrable) | 2026-08-01 |
 | [0003](0003-icp-secteur-comme-cle-de-configuration-multi-industrie.md) | `icp_id`/`secteur_id` comme clé de configuration multi-industrie | proposée dans le document — Lot 1 **implémenté** en pratique (`356c361`) ; l'en-tête de l'ADR n'a pas été mis à jour par son auteur | 2026-08-02 |
-| [0004](0004-axe-intention-et-collecteurs-osint-cibles.md) | Axe `intention` (second axe daté et décroissant) + collecteurs OSINT ciblés | **proposée — aucune ligne de code livrée** | 2026-08-03 |
+| [0004](0004-axe-intention-et-collecteurs-osint-cibles.md) | Axe `intention` (second axe daté et décroissant) + collecteurs OSINT ciblés | proposée dans le document — **Lots 1-2 et volet export du Lot 3 implémentés** en pratique (`cc99302`) ; Lot 0, Lot 0bis et le reste du Lot 3 non faits ; l'en-tête de l'ADR n'a pas été mis à jour par son auteur | 2026-08-03 |
 
 > **Note de cohérence (agent-documentation, 2026-08-03).** Le statut affiché
 > dans l'en-tête de l'ADR 0003 elle-même dit encore « proposée — conception
@@ -23,6 +23,17 @@ mois faute de mémoire.
 > ce n'est donc pas à ce document de corriger l'en-tête 0003 lui-même — c'est un
 > écart à signaler à l'agent qui la maintient (`agent-architecte`), pas à
 > réparer ici.
+>
+> **Même écart, même traitement, pour l'ADR 0004 (agent-documentation,
+> 2026-08-03).** Son en-tête dit encore « proposée — conception uniquement,
+> aucune ligne de code livrée », alors que le commit `cc99302` a implémenté les
+> Lots 1-2 et le volet export du Lot 3 — vérifié : `diagnostic/intent.py`,
+> `diagnostic/collectors/_decay.py`, `diagnostic/collectors/legitimite.py`
+> existent, `git diff diagnostic/scoring.py` est vide (invariant dur de l'ADR
+> tenu), `knowledge/export_kemana.yaml` compte 13 colonnes. Non fait :
+> Lot 0 (`motif_rejet`), Lot 0bis (calibration `fraicheur_mois`), reste du
+> Lot 3 (cockpit, requête Dataview, `FicheProspect.quadrant`). Détail complet :
+> `CLAUDE.md` §Architecture « Axe intention », `docs/CHANGELOG.md` [Itération 4].
 
 ## Quand écrire une ADR
 
