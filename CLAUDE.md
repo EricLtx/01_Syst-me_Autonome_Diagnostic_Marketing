@@ -613,6 +613,27 @@ Sept agents : `agent-documentation` (lancé à **chaque** itération),
    spectaculaire du protocole et il a désormais deux prises, **toutes deux sur
    des messages écrits par l'agent coordinateur** — celui que personne d'autre
    ne relit.
+9. Itération 5 (2026-08-04) : chantier **refonte v2 — conception** (`docs/v2/`,
+   6 fichiers, **4 538 lignes**, **zéro code touché**). Revue à **12/12,
+   100 %, CLEARED** dès le premier passage. Mode de risque différent des
+   itérations précédentes : le chantier ne produit aucun code, donc
+   l'hallucination ne se manifeste pas par un test rouge mais par **une
+   affirmation de conception présentée comme fondée alors qu'elle relève du
+   jugement**. Les assertions ont été construites pour cela (régimes de preuve,
+   marquage `[NON LU]`/`[NON VÉRIFIÉ]`, ré-exécution des constats de code).
+   Deux points de vigilance consignés sans faire tomber le taux :
+   (a) `docs/v2/ARCHITECTURE-CIBLE.md` annonce une convention de marquage
+   `[CERTAIN]`/`[RECOMMANDÉ]`/`[À CALIBRER]` et ne l'applique que **4 fois en
+   740 lignes** — atténué par un usage systématique de « Décision » +
+   « Argument » en prose, mais la discipline promise n'est pas tenue ;
+   (b) le chiffre « 4 142 lignes » relayé par l'agent coordinateur était périmé
+   (mesuré avant l'ajout de `INVARIANTS-v2.md`) — **troisième chiffre périmé
+   venant du coordinateur**, après les deux sur-attributions de commit.
+   Le motif est désormais stable et mérite d'être nommé : *le coordinateur
+   recopie un chiffre qu'il a lui-même mesuré plus tôt, au lieu de le
+   recompter.* Il ne se corrige pas par de la vigilance mais par un contrôle
+   exécutable — c'est le rôle de `tests/test_doc_coherence.py`, et il a
+   effectivement attrapé deux de ces trois cas.
 
 ## État des tests (669 dans `tests/` + 49 backend + 34 front — J1 à J5, CORE, GreenIT, intégration, axe intention, dossier d'audit)
 
