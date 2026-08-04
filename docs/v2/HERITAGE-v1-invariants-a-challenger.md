@@ -12,7 +12,8 @@
 
 La v1 est un système de 5 408 lignes qui **n'a jamais vu une entreprise
 réelle** : 669 tests, tous contre un faux serveur HTTP local ; vault vide ;
-zéro clé API ; préflight NO-GO avec 16 contrôles bloquants.
+zéro clé API ; préflight NO-GO — **9 contrôles**, dont **14 assertions
+bloquantes en échec** (clés API, tarifs, budgets, vault non initialisé).
 
 Dans ces conditions, la valeur de la v1 n'est **pas** son code. C'est la liste
 des erreurs qu'elle a commises et corrigées, chacune payée par une régression
